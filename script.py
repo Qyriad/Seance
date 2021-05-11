@@ -17,7 +17,8 @@ class SeanceTelegramBot:
         self.pattern = re.compile(pattern, re.DOTALL)
 
         self.updater = Updater(token=token, use_context=True)
-        message_handler = MessageHandler(Filters.text & (~Filters.command), self.on_message)
+        msg_filter = Filters.update.message & (~Filters.command) & Filters.user(username=self.ref_username)
+        message_handler = MessageHandler(msg_filter, self.on_message)
         self.updater.dispatcher.add_handler(message_handler)
 
 
@@ -25,34 +26,47 @@ class SeanceTelegramBot:
         self.updater.start_polling()
 
 
-    def proxy(self, context: CallbackContext, message: telegram.Message, new_content: str):
+    def proxy(self, context: CallbackContext, message: telegram.Message, new_content: str, entity_shift: int):
 
         # FIXME: handle attachments
 
         # Man I wish Python had a null-coalescing member access operator.
         reply_id = message.reply_to_message.message_id if message.reply_to_message is not None else None
 
-        context.bot.send_message(message.chat_id, new_content, reply_to_message_id=reply_id)
+        # Rich text specifiers like italics are index-based. We have to transform those to the indeces of the new
+        # new (without the proxy tags).
+        # To do that, we need to find the offset between the desired content, and the original content.
+
+        # Rich text in Telegram is specified by an index, but we've changed the content, so those indicies are no
+        # longer valid. So we have to shift those indecides by however much we changed the start of the content.
+
+        entities = message.entities[:]
+        for entity in entities:
+            entity.offset -= entity_shift
+
+        context.bot.send_message(message.chat_id, new_content, reply_to_message_id=reply_id, entities=entities)
 
 
     def on_message(self, update: Update, context: CallbackContext):
 
         message: telegram.Message = update.message
-        author: telegram.User = message.from_user
-
-        # We only care about messages from the reference user.
-        if author.username != self.ref_username:
-            return
+        if message is None:
+            print(update)
 
         matches = self.pattern.match(message.text)
         if matches:
             new_content = matches.groupdict()['content']
+            offset_to_content = matches.start('content')
             if new_content:
+                pre_strip_len = len(new_content)
                 new_content = new_content.strip()
+                post_strip_len = len(new_content)
+                stripped_count = pre_strip_len - post_strip_len
+                offset_to_content += stripped_count
 
             # Proxy the message.
             try:
-                self.proxy(context, message, new_content)
+                self.proxy(context, message, new_content, entity_shift=offset_to_content)
             except telegram.error.BadRequest as e:
                 print("Failed to proxy message: {}\nNot deleting original message.".format(e))
                 return
@@ -62,8 +76,6 @@ class SeanceTelegramBot:
                 message.delete()
             except telegram.error.BadRequest as e:
                 print("Failed to delete original message: {}".format(e))
-
-
 
 
 def main():
