@@ -8,7 +8,6 @@ from io import StringIO
 from typing import Union
 
 import discord
-import discord.http
 from discord import Message, Member, Status, CustomActivity
 from discord.errors import HTTPException
 from discord.guild import Guild
