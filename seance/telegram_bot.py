@@ -20,7 +20,7 @@ class SeanceClient:
 
         self.updater = Updater(token=token, use_context=True)
         message_filter = Filters.update.message & (~Filters.command) & Filters.user(username=self.ref_username)
-        message_handler = MessageHandler(msg_filter, self.on_message)
+        message_handler = MessageHandler(message_filter, self.on_message)
         self.updater.dispatcher.add_handler(message_handler)
 
 
@@ -28,7 +28,7 @@ class SeanceClient:
         self.updater.start_polling()
 
 
-    def proxy(self, context: CallbackContext, message: telegram.Message, new_content: str):
+    def proxy(self, context: CallbackContext, message: telegram.Message, new_content: str, entity_shift: int):
 
         # FIXME: handle attachments
 
@@ -39,7 +39,7 @@ class SeanceClient:
         # longer valid. So we have to shift those indecies by however much we changed the start of the content.
 
         entities = message.entities[:]
-        for entity in entitites:
+        for entity in entities:
             entity.offset -= entity_shift
 
         context.bot.send_message(message.chat_id, new_content, reply_to_message_id=reply_id, entities=entities)
