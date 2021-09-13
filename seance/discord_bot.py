@@ -61,14 +61,7 @@ class SeanceClient(discord.Client):
         """ For some reason, message.content doesn't always seem to be populated properly, so sometimes we have
         to re-fetch the message.  """
 
-        # channel.fetch_message() [/channels/{channel.id}/message/{message.id}] can only be used by bot users,
-        # for some reason, so we'll use channel.history() [/channels/{channel.id}/{messsage.id}]
-        # with the limit set to 1 and the direction set to around to fetch a single message,
-        # to be compatible with user accounts, just in case.
-        # Unfortunately, discord.py's API and Python's async generators make this look wonk.
-        messages = message.channel.history(limit=1, around=message)
-        async for m in messages:
-            return m
+        return await message.channel.fetch_message(message)
 
 
     async def _get_target_message_and_args(self, message: Message, command_terminator=' '):
@@ -416,10 +409,6 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--token', required=False, action='store', type=str,
         help="The token to use for authentication. Required or `$SEANCE_DISCORD_TOKEN` environment variable.")
-    parser.add_argument('--bot', required=False, action='store_true', dest='bot', default=True,
-        help="Authenticate as a bot account. The default.")
-    parser.add_argument('--user', required=False, action='store_false', dest='bot', default=False,
-        help="Authenticate as a user account, as opposed to as a bot account. Do this at your own risk.")
     parser.add_argument('--ref-user-id', required=False, action='store', type=int, metavar='ID',
         help="The ID of the message to recognize messages to proxy from. "
             "Required or `$SEANCE_DISCORD_REF_USER_ID` environment variable.")
@@ -445,8 +434,6 @@ def main():
     if not pattern:
         parser.error("--pattern required or $SEANCE_DISCORD_PATTERN")
 
-    bot = not bool(os.getenv("SEANCE_DISCORD_USERBOT"))
-
     # HACK: Monkey-patch the base API URL, as discord.py uses API v7 and replies seem to want v8.
     discord.http.Route.BASE = 'https://discord.com/api/v8'
 
@@ -457,7 +444,7 @@ def main():
 
     client = SeanceClient(ref_user_id, pattern, args.prefix, intents=intents)
     print("Starting Séance Discord bot.")
-    client.run(token, bot=bot)
+    client.run(token)
 
 
 if __name__ == '__main__':
