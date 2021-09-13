@@ -22,7 +22,7 @@ from PythonSed import Sed
 DISCORD_MESSAGE_URL_PATTERN = re.compile(r'https://(?:\w+.)?discord(?:app)?.com/channels/\d+/(\d+)/(\d+)')
 
 # A pattern for matching Discord activities (https://discord.com/developers/docs/topics/gateway#activity-object).
-DISCORD_STATUS_PATTERN = re.compile(r'(?P<type>playing|streaming|listening to|watching|competing in)?\s*(?P<name>.+)', re.IGNORECASE, re.DOTALL)
+DISCORD_STATUS_PATTERN = re.compile(r'(?P<type>playing|streaming|listening to|watching|competing in)?\s*(?P<name>.+)', re.IGNORECASE | re.DOTALL)
 
 
 class SeanceClient(discord.Client):
