@@ -306,6 +306,12 @@ class SeanceClient(discord.Client):
             # If it didn't match, clear the status.
             await self.change_presence(activity=None)
 
+        # And delete the command message.
+        try:
+            await message.delete()
+        except HTTPException as e:
+            print(f"Failed to delete command message: {e}.", sys.stderr)
+
 
     #
     # discord.py event handler overrides.
