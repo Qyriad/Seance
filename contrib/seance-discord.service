@@ -1,0 +1,14 @@
+# vim: ft=systemd.service
+[Unit]
+Wants=network.target
+After=network.target
+
+[Service]
+Type=notify
+Environment="SEANCE_DISCORD_TOKEN=TOKEN_HERE"
+Environment="SEANCE_DISCORD_REF_USER_ID=YOUR_USER_ID_HERE"
+ExecStart=/usr/bin/python3 -m seance.discord_bot --pattern "REGEX_HERE"
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

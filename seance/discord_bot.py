@@ -9,13 +9,18 @@ from typing import Union
 
 import discord
 from discord import Message, Member, Status
-from discord.activity import Activity, ActivityType, CustomActivity
+from discord.activity import Activity, ActivityType
 from discord.errors import HTTPException
 from discord.guild import Guild
 from discord.message import PartialMessage
 
 import PythonSed
 from PythonSed import Sed
+
+try:
+    import sdnotify
+except ImportError:
+    pass
 
 
 # A pattern that matches a link to a Discord message, and captures the channel ID and message ID.
@@ -30,13 +35,18 @@ class KeepCurrentSentinel:
 keep_current = KeepCurrentSentinel()
 
 
+def running_in_systemd() -> bool:
+    return 'INVOCATION_ID' in os.environ
+
+
 class SeanceClient(discord.Client):
 
-    def __init__(self, ref_user_id, pattern, command_prefix, *args, **kwargs):
+    def __init__(self, ref_user_id, pattern, command_prefix, sdnotify=False, *args, **kwargs):
 
         self.ref_user_id = ref_user_id
         self.pattern = re.compile(pattern, re.DOTALL)
         self.command_prefix = command_prefix
+        self.sdnotify = sdnotify
 
         super().__init__(*args, **kwargs)
 
@@ -324,7 +334,13 @@ class SeanceClient(discord.Client):
     #
 
     async def on_ready(self):
+
         print("Séance Discord client startup complete.")
+
+        if self.sdnotify:
+            # Tell systemd we've started up.
+            notifer = sdnotify.SystemdNotifier(debug=True)
+            notifer.notify("READY=1")
 
 
     async def on_message(self, message: Message):
@@ -430,6 +446,11 @@ def main():
     parser.add_argument('--prefix', required=False, action='store', type=str, default='',
         help="An additional prefix to accept commands with.")
 
+    sdnotify_available = 'sdnotify' in sys.modules
+    help_addendum = ' (Requires `sdnotify` Python package, not found.)' if not sdnotify_available else ''
+    parser.add_argument('--systemd-notify', required=False, action='store_true', default=False,
+        help=f'Notify systemd when startup is complete.{help_addendum}')
+
     args = parser.parse_args()
 
     token = args.token if args.token else os.getenv("SEANCE_DISCORD_TOKEN")
@@ -446,6 +467,19 @@ def main():
     if not pattern:
         parser.error("--pattern required or $SEANCE_DISCORD_PATTERN")
 
+    if args.systemd_notify and not sdnotify_available:
+        parser.error('--systemd-notify passed but `sdnotify` Python package not available. Try `pip3 install sdnotify`?')
+
+    if running_in_systemd():
+        if not args.systemd_notify:
+            print("Warning: you seem to be running in a systemd service, but --systemd-notify was not passed.", file=sys.stderr)
+            print("Warning: systemd will not properly detect if Séance fails to start.", file=sys.stderr)
+
+        if not sys.stdout.write_through:
+            print("Warning: you seem to be running in a systemd service, but line buffering is on.", file=sys.stderr)
+            print("Warning: Séance's output will not properly redirect to systemd-journald. Set $PYTHONUNBUFFERED=1", file=sys.stderr)
+            sys.stdout.flush()
+
     # HACK: Monkey-patch the base API URL, as discord.py uses API v7 and replies seem to want v8.
     discord.http.Route.BASE = 'https://discord.com/api/v8'
 
@@ -454,7 +488,7 @@ def main():
     intents.members = True
     intents.presences = True
 
-    client = SeanceClient(ref_user_id, pattern, args.prefix, intents=intents)
+    client = SeanceClient(ref_user_id, pattern, args.prefix, intents=intents, sdnotify=args.systemd_notify)
     print("Starting Séance Discord bot.")
     client.run(token)
 
