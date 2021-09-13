@@ -25,6 +25,11 @@ DISCORD_MESSAGE_URL_PATTERN = re.compile(r'https://(?:\w+.)?discord(?:app)?.com/
 DISCORD_STATUS_PATTERN = re.compile(r'(?P<type>playing|streaming|listening to|watching|competing in)?\s*(?P<name>.+)', re.IGNORECASE | re.DOTALL)
 
 
+class KeepCurrentSentinel:
+    """ A sentinal type used just for SeanceClient._set_presence(). """
+keep_current = KeepCurrentSentinel()
+
+
 class SeanceClient(discord.Client):
 
     def __init__(self, ref_user_id, pattern, command_prefix, *args, **kwargs):
@@ -39,6 +44,10 @@ class SeanceClient(discord.Client):
         self._status_override = None
         self._cached_status = Status.online
 
+        # Cache our current presence, as we seem to have trouble fetching it from Discord later on.
+        self._current_activity = None
+        self._current_status = Status.online
+
         self.command_handlers = {
             '!s/': self.handle_substitute_command,
             '!edit': self.handle_edit_command,
@@ -51,9 +60,19 @@ class SeanceClient(discord.Client):
         return content.startswith(command) or content.startswith(f"{self.command_prefix}{command}")
 
 
-    async def _fetch_current_activity(self, guild):
-        me: Member = await guild.fetch_member(self.user.id)
-        return me.activity
+    async def _set_presence(self, *, activity=keep_current, status=keep_current):
+        """ Allows setting activity and status separately without messing with each other. """
+
+        new_activity = self._current_activity if activity == keep_current else activity
+        new_status = self._current_status if status == keep_current else status
+
+        await self.change_presence(activity=new_activity, status=new_status)
+
+        if activity != keep_current:
+            self._current_activity = activity
+
+        if status != keep_current:
+            self._current_status = status
 
 
     @staticmethod
@@ -232,17 +251,11 @@ class SeanceClient(discord.Client):
             print(f"Incorrect parameters for !presence: {message.content}", file=sys.stderr)
             return
 
-        # In order to see our current activity, we need to find a guild we're in.
-        # If the command message was sent in a guild, great, we can use that.
-        # Otherwise, just get a list of the guilds the bot is in and take the first one.
-        guild = getattr(message.channel, 'guild', await self.fetch_guilds().__anext__())
-        activity = await self._fetch_current_activity(guild)
-
         # If we're switching back to sync, sync!
         if presence == 'sync':
             self._status_override = None
             try:
-                await self.change_presence(status=self._cached_status, activity=activity)
+                await self._set_presence(status=self._cached_status)
             except HTTPException as e:
                 print(f"Failed to apply presence: {e}.", file=sys.stderr)
 
@@ -256,16 +269,16 @@ class SeanceClient(discord.Client):
                 print(f"Could not apply unknown presence {presence}.", file=sys.stderr)
 
             try:
-                await self.change_presence(status=self._status_override, activity=activity)
+                await self._set_presence(status=self._status_override)
             except HTTPException as e:
                 print(f"Could not apply presence: {e}.", file=sys.stderr)
                 return
 
-            # Delete the original message.
-            try:
-                await message.delete()
-            except HTTPException as e:
-                print(f"Failed to delete messsage: {e}.", file=sys.stderr)
+        # Delete the original message.
+        try:
+            await message.delete()
+        except HTTPException as e:
+            print(f"Failed to delete messsage: {e}.", file=sys.stderr)
 
 
     async def handle_status_command(self, message: Message):
@@ -293,11 +306,11 @@ class SeanceClient(discord.Client):
             new_activity = Activity(type=ActivityType[activity_type], name=name)
 
             # Set the new activity.
-            await self.change_presence(activity=new_activity)
+            await self._set_presence(activity=new_activity)
 
         else:
             # If it didn't match, clear the status.
-            await self.change_presence(activity=None)
+            await self._set_presence(activity=None)
 
         # And delete the command message.
         try:
@@ -387,18 +400,17 @@ class SeanceClient(discord.Client):
                 print(f"Failed to delete original message: {e}.", file=sys.stderr)
 
 
-    async def on_member_update(self, _before: Member, after: Member):
+    async def on_presence_update(self, _before: Member, after: Member):
 
         # Only sync status with the reference account.
         if after.id != self.ref_user_id:
             return
 
         status = after.status if after.status != Status.offline else Status.invisible
-        activity = await self._fetch_current_activity(after.guild)
 
         # If we don't have a status override, adopt whatever status we've seen.
         if self._status_override is None:
-            await self.change_presence(status=status, activity=activity)
+            await self._set_presence(status=status)
 
         # Always cache the status, in case override turns off.
         self._cached_status = status
