@@ -8,7 +8,8 @@ from io import StringIO
 from typing import Union
 
 import discord
-from discord import Message, Member, Status, CustomActivity
+from discord import Message, Member, Status
+from discord.activity import Activity, ActivityType, CustomActivity
 from discord.errors import HTTPException
 from discord.guild import Guild
 from discord.message import PartialMessage
@@ -19,6 +20,9 @@ from PythonSed import Sed
 
 # A pattern that matches a link to a Discord message, and captures the channel ID and message ID.
 DISCORD_MESSAGE_URL_PATTERN = re.compile(r'https://(?:\w+.)?discord(?:app)?.com/channels/\d+/(\d+)/(\d+)')
+
+# A pattern for matching Discord activities (https://discord.com/developers/docs/topics/gateway#activity-object).
+DISCORD_STATUS_PATTERN = re.compile(r'(?P<type>playing|streaming|listening to|watching|competing in)?\s*(?P<name>.+)')
 
 
 class SeanceClient(discord.Client):
@@ -274,53 +278,33 @@ class SeanceClient(discord.Client):
     async def handle_status_command(self, message: Message):
         """ !status [status] -- sets the bot user's status. """
 
-        # Parse the command, which could start with an emoji.
-        try:
-            _, emoji, *text = message.content.split()
-            text = ' '.join(text)
+        # Get the arguments to the command.
+        _command, *args = message.content.split(' ')
+        args = ' '.join(args)
 
-        except ValueError:
-            # If the command was just !status, then clear the status.
-            await self.change_presence(activity=CustomActivity(''))
+        matches = re.match(DISCORD_STATUS_PATTERN, args, re.IGNORECASE | re.DOTALL)
 
-            # And delete the command message.
-            try:
-                await message.delete()
-            except HTTPException as e:
-                print(f"Failed to delete command message: {e}.", sys.stderr)
+        if matches:
 
-            return
+            activity_type = matches.group('type')
+            if activity_type:
+                # Discord.py's names for these don't include the second word for "listening to" or "competing in",
+                # and are only in lowercase.
+                activity_type = matches.group('type').split()[0].lower()
+            else:
+                # If not specified, default to 'Playing'.
+                activity_type = 'playing'
 
-        # If we have what appears to be a custom emoji, we'll need to extract its ID and name to use it.
-        emoji_match = re.match(r"<a*:(\w+):(\d+)+>", emoji)
-        if emoji_match:
-            emoji_name, emoji_id = emoji_match.groups()
-            emoji = { 'name': emoji_name, 'id': emoji_id }
+            name = matches.group('name')
 
-        # If we have something that looks like a standard emoji,
-        # then extract the unicode character as the name, as set the ID to None.
-        elif (len(emoji) == 1) and (ord(emoji) > 256):
-            emoji = { 'name': emoji, 'id': None }
+            new_activity = Activity(type=ActivityType[activity_type], name=name)
 
-        # If this doesn't seem to be an emoji at all, it's probably just part of the status.
-        # Squish it back in there, whatever.
+            # Set the new activity.
+            await self.change_presence(activity=new_activity)
+
         else:
-            text = f"{emoji} {text}"
-            emoji = None
-
-        # Finally, do the actual status-setting.
-        try:
-            activity = CustomActivity('Custom Status', status=text, emoji=emoji)
-            await self.change_presence(activity=activity)
-        except HTTPException as e:
-            print(f"Failed to set status: {e}\nNot deleting original message.", file=sys.stderr)
-            return
-
-        # Delete the command message.
-        try:
-            await message.delete()
-        except HTTPException as e:
-            print(f"Failed to delete command message: {e}.", file=sys.stderr)
+            # If it didn't match, clear the status.
+            await self.change_presence(activity=None)
 
 
     #
