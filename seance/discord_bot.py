@@ -480,9 +480,6 @@ def main():
             print("Warning: Séance's output will not properly redirect to systemd-journald. Set $PYTHONUNBUFFERED=1", file=sys.stderr)
             sys.stdout.flush()
 
-    # HACK: Monkey-patch the base API URL, as discord.py uses API v7 and replies seem to want v8.
-    discord.http.Route.BASE = 'https://discord.com/api/v8'
-
     # Ensure we can access member lists and collections of their presences.
     intents = discord.Intents.default()
     intents.members = True
