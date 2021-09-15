@@ -493,7 +493,7 @@ def main():
         if not sys.stdout.write_through:
             print("Warning: you seem to be running in a systemd service, but line buffering is on.", file=sys.stderr)
             print("Warning: Séance's output will not properly redirect to systemd-journald. Set $PYTHONUNBUFFERED=1", file=sys.stderr)
-            sys.stdout.flush()
+            sys.stderr.flush()
 
     # Ensure we can access member lists and collections of their presences.
     intents = discord.Intents.default()
