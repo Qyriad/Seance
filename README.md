@@ -14,6 +14,8 @@ Okay, that sounds really complicated, so here's an example, where the format for
 $ python3 -m seance.discord_bot --token ODDFOFXUpgf7yEntul5ockCA.OFk6Ph.lmsA54bT0Fux1IpsYvey5XuZk04 --ref-user-id 188344527881400991 --pattern "[bB]:(?P<content>.*)"
 ```
 
+Note that the Discord bot also requires the Presence and Server Members Privileged Gateway Intents, which can be enabled in the "Bot" settings of the Discord application page.
+
 Once started, the bot also accepts a few chat commands:
 - `!edit [reply|link] <new content>` — takes a reply or a link to a message, and the new message content
 - `!s/pattern/replacement` — takes a reply, and a sed-style substitution command to edit a message
