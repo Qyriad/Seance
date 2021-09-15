@@ -44,7 +44,13 @@ class SeanceClient(discord.Client):
     def __init__(self, ref_user_id, pattern, command_prefix, sdnotify=False, *args, **kwargs):
 
         self.ref_user_id = ref_user_id
-        self.pattern = re.compile(pattern, re.DOTALL)
+
+        # If we weren't given an already compiled re.Pattern, compile it now.
+        if not isinstance(pattern, re.Pattern):
+            self.pattern = re.compile(pattern, re.DOTALL)
+        else:
+            self.pattern = pattern
+
         self.command_prefix = command_prefix
         self.sdnotify = sdnotify
 
@@ -434,14 +440,14 @@ class SeanceClient(discord.Client):
 
 def main():
 
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser('seance-discord')
     parser.add_argument('--token', required=False, action='store', type=str,
         help="The token to use for authentication. Required or `$SEANCE_DISCORD_TOKEN` environment variable.")
     parser.add_argument('--ref-user-id', required=False, action='store', type=int, metavar='ID',
         help="The ID of the message to recognize messages to proxy from. "
             "Required or `$SEANCE_DISCORD_REF_USER_ID` environment variable.")
     parser.add_argument('--pattern', required=False, action='store', type=str,
-        help="The Python regex used to match messages. "
+        help="The Python regex used to match messages. Must have a named capture group called `content`. "
             "Required or `$SEANCE_DISCORD_PATTERN` environment variable.")
     parser.add_argument('--prefix', required=False, action='store', type=str, default='',
         help="An additional prefix to accept commands with.")
@@ -467,6 +473,15 @@ def main():
     if not pattern:
         parser.error("--pattern required or $SEANCE_DISCORD_PATTERN")
 
+    try:
+        pattern = re.compile(pattern, re.DOTALL)
+    except re.error as e:
+        print('Invalid regular expression given for --patern', file=sys.stderr)
+        raise
+
+    if 'content' not in pattern.groupindex:
+        parser.error('Regex pattern must have a named capture group called `content` (see https://docs.python.org/3/library/re.html#index-17)')
+
     if args.systemd_notify and not sdnotify_available:
         parser.error('--systemd-notify passed but `sdnotify` Python package not available. Try `pip3 install sdnotify`?')
 
@@ -485,7 +500,7 @@ def main():
     intents.members = True
     intents.presences = True
 
-    client = SeanceClient(ref_user_id, pattern, args.prefix, intents=intents, sdnotify=args.systemd_notify)
+    client = SeanceClient(ref_user_id, pattern, args.prefix, sdnotify=args.systemd_notify, intents=intents)
     print("Starting Séance Discord bot.")
     client.run(token)
 
