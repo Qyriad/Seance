@@ -22,8 +22,15 @@ Once started, the bot also accepts a few chat commands:
 
 The Séance CLI also takes an optional argument `--prefix`, which is an additional prefix to accept commands with. This is intended for cases where a single Discord user has more than one associated Séance bot, in order to be able to direct commands to a particular instance. For example, passing `--prefix b` allows you to run the chat command `b!status` to set the status for that specific instance of Séance.
 
+### systemd
 
-There is also a sample file for running the Séance Discord bot as a systemd service in [contrib](contrib/seance-discord.service). Note that for proper systemd support the Python package `sdnotify` is also required (`pip3 install sdnotify`).
+There is also a sample file for running the Séance Discord bot as a systemd service in [contrib](contrib/seance-discord.service). Note that for proper systemd support the Python package `sdnotify` is also required (`pip3 install sdnotify`). If you do not wish to enable this feature, you should remove the `--systemd-notify` argument from the provided service. 
+
+It is suggested that you create a specific non-privileged user to run the bot under, the service config assumes this user is called "seance". 
+
+Such a user can be created with `sudo useradd seance`. To avoid installing Séance globally, which might be ill-advised, you can create a home directory for the user, something like `sudo useradd --create-home --home-dir /srv/seance seance` will create a home directory for the user in `/srv/seance`. 
+
+To install seance and sdnotify for this user use `sudo -u seance pip3 install --user sdnotify git+https://github.com/Qyriad/Seance`.
 
 
 ## Comparison to PluralKit
