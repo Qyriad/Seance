@@ -156,8 +156,8 @@ class SeanceClient(discord.Client):
 
                 except (AttributeError, IndexError, HTTPException) as e:
 
-                    # Okay. No link. No ID. No reply. Just find the last proxied message within 50 messages.
-                    prev_messages = message.channel.history(limit=50)
+                    # Okay. No link. No ID. No reply. Just find the last proxied message within 5 messages.
+                    prev_messages = message.channel.history(limit=5)
                     async for msg in prev_messages:
                         if msg.author.id == self.user.id:
                             return msg, message.content[(message.content.find(command_terminator) + 1):]
@@ -184,10 +184,10 @@ class SeanceClient(discord.Client):
         if message.reference is not None:
             target = message.reference.resolved
 
-        # Otherwise, assume the most recent message within 50 messages.
+        # Otherwise, assume the most recent message within 5 messages.
         else:
 
-            prev_messages = message.channel.history(limit=50)
+            prev_messages = message.channel.history(limit=5)
             target = None
             async for msg in prev_messages:
                 if msg.author.id == self.user.id:
@@ -195,7 +195,7 @@ class SeanceClient(discord.Client):
                     break
 
         if target is None:
-            print("Substitution requested but no proxied message was found within 50 messages!")
+            print("Substitution requested but no proxied message was found within 5 messages!")
             return
 
         sed = Sed()
@@ -239,7 +239,7 @@ class SeanceClient(discord.Client):
         target, args = await self._get_target_message_and_args(message)
 
         if target is None:
-            print("Edit requested but no proxied message found within 50 messages!", file=sys.stderr)
+            print("Edit requested but no proxied message found within 5 messages!", file=sys.stderr)
             return
 
         new_content = args
