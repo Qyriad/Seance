@@ -436,7 +436,7 @@ class SeanceClient(discord.Client):
                 print("Cannot use the emoji given.")
                 return
 
-        self._handle_reaction(target, payload, group_dict["action"] == '+')
+        await self._handle_reaction(target, payload, group_dict["action"] == '+')
 
     #
     # discord.py event handler overrides.
