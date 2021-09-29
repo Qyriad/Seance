@@ -120,6 +120,7 @@ class SeanceClient(discord.Client):
 
 
     async def _get_shortcut_target(self, message: Message):
+        """ Pulls out the referenced message, or the first non-invoking message."""
         # If the command replied to a message, then use that to get the message to edit.
         if message.reference is not None:
             target = message.reference.resolved
@@ -203,6 +204,7 @@ class SeanceClient(discord.Client):
 
 
     async def _handle_content(self, message: Message, content: str):
+        """ Interal handler for a message of content to be handled. """
         if content:
             content = content.strip()
 
@@ -227,6 +229,7 @@ class SeanceClient(discord.Client):
             print(f"Failed to delete original message: {e}.", file=sys.stderr)
     
     async def _handle_reaction(self, target: Message, payload: Union[Emoji, str], adding: bool):
+        """ Handles adding or removing a reaction to a target message. """
         if adding:
             try:
                 await target.add_reaction(payload)
@@ -411,11 +414,12 @@ class SeanceClient(discord.Client):
             print(f"Failed to delete command message: {e}.", sys.stderr)
 
     async def handle_simple_reaction(self, message: Message, content: str):
+        """ Adds or removes a simple emoji reaction to a given message """
         target = await self._get_shortcut_target(message)
         await self._handle_reaction(target, content[1], content[0] == '+') 
 
     async def handle_custom_reaction(self, message: Message, content: str):
-        """ Adds or removes the bot's reaction to a given message """
+        """ Adds or removes a custom emoji reaction to a given message """
         target = await self._get_shortcut_target(message)
         
         group_dict = DISCORD_REACTION_SHORTCUT_PATTERN.fullmatch(content).groupdict()
