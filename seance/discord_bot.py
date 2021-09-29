@@ -34,7 +34,7 @@ DISCORD_MESSAGE_URL_PATTERN = re.compile(r'https://(?:\w+.)?discord(?:app)?.com/
 DISCORD_STATUS_PATTERN = re.compile(r'(?P<type>playing|streaming|listening to|watching|competing in)?\s*(?P<name>.+)', re.IGNORECASE | re.DOTALL)
 
 # A pattern for matching the reaction add (and remove) shortcuts in the standard client.
-DISCORD_REACTION_SHORTCUT_PATTERN = re.compile(r'(?P<action>[+-])\<a?:<name>\w{2,}:(?P<id>\d+)\>')
+DISCORD_REACTION_SHORTCUT_PATTERN = re.compile(r'(?P<action>[+-])\<a?:\w{2,}:(?P<id>\d+)\>')
 
 
 class KeepCurrentSentinel:
