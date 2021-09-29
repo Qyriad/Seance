@@ -1,5 +1,7 @@
 """ The Discord bot version of Seance. """
 
+from logging import Handler
+from operator import truediv
 import os
 import re
 import sys
@@ -9,13 +11,15 @@ from typing import Union
 
 import discord
 from discord import Message, Member, Status
-from discord import reaction
+from discord import Emoji
 from discord.activity import Activity, ActivityType
 from discord.errors import HTTPException
 from discord.message import PartialMessage
 
 import PythonSed
 from PythonSed import Sed
+
+from emoji import is_emoji
 
 try:
     import sdnotify
@@ -29,8 +33,8 @@ DISCORD_MESSAGE_URL_PATTERN = re.compile(r'https://(?:\w+.)?discord(?:app)?.com/
 # A pattern for matching Discord activities (https://discord.com/developers/docs/topics/gateway#activity-object).
 DISCORD_STATUS_PATTERN = re.compile(r'(?P<type>playing|streaming|listening to|watching|competing in)?\s*(?P<name>.+)', re.IGNORECASE | re.DOTALL)
 
-# A pattern for matching the reaction add and remove shortcuts in the standard client.
-DISCORD_REACTION_SHORTCUT_PATTERN = re.compile(r'(?P<action>[+-])\<a?:(?P<name>\w{2,}):(?P<id>\d+)\>')
+# A pattern for matching the reaction add (and remove) shortcuts in the standard client.
+DISCORD_REACTION_SHORTCUT_PATTERN = re.compile(r'(?P<action>[+-])\<a?:<name>\w{2,}:(?P<id>\d+)\>')
 
 
 class KeepCurrentSentinel:
@@ -73,11 +77,24 @@ class SeanceClient(discord.Client):
             '!status': self.handle_status_command,
             '!presence': self.handle_presence_command,
         }
+        
+        self.shortcut_handlers = {
+            self._matches_simple_react: self.handle_simple_reaction,
+            self._matches_custom_react: self.handle_custom_reaction,
+        }
 
 
     def _matches_command(self, content, command):
         return content.startswith(command) or content.startswith(f"{self.command_prefix}{command}")
 
+    def _matches_simple_react(self, content):
+        return content[0] in "+-" and is_emoji(content[1:])
+
+    def _matches_custom_react(self, content):
+        if DISCORD_REACTION_SHORTCUT_PATTERN.fullmatch(content):
+            return True
+        else:
+            return False
 
     async def _set_presence(self, *, activity=keep_current, status=keep_current):
         """ Allows setting activity and status separately without messing with each other. """
@@ -101,6 +118,25 @@ class SeanceClient(discord.Client):
 
         return await message.channel.fetch_message(message)
 
+
+    async def _get_shortcut_target(self, message: Message):
+        # If the command replied to a message, then use that to get the message to edit.
+        if message.reference is not None:
+            target = message.reference.resolved
+            # Get full message.
+            target = await message.channel.fetch_message(target.id)
+
+        # Otherwise, assume the most recent (non-invoking) message.
+        else:
+            prev_messages = message.channel.history(limit=2)
+            target = None
+            async for msg in prev_messages:
+                if msg.id != message.id:
+                    target = msg
+                    break
+        
+        return target
+        
 
     async def _get_target_message_and_args(self, message: Message, command_terminator=' '):
         """ Parse out a target message and remaining arguments from a message.
@@ -165,6 +201,43 @@ class SeanceClient(discord.Client):
                         if msg.author.id == self.user.id:
                             return msg, message.content[(message.content.find(command_terminator) + 1):]
 
+
+    async def _handle_content(self, message: Message, content: str):
+        if content:
+            content = content.strip()
+
+        # Check if it is a shortcut reaction command.
+        for check, handler in self.shortcut_handlers.items():
+            if check(content):
+                await handler(message, content)
+                break
+        # Default to proxying the message
+        else:
+            # Now actually proxy the message.
+            try:
+                await self.proxy(message, content)
+            except HTTPException as e:
+                print(f"Failed to proxy message: {e}\nNot deleting original message.", file=sys.stderr)
+                return
+
+        # Delete the original message.
+        try:
+            await message.delete()
+        except HTTPException as e:
+            print(f"Failed to delete original message: {e}.", file=sys.stderr)
+    
+    async def _handle_reaction(self, target: Message, payload: Union[Emoji, str], adding: bool):
+        if adding:
+            try:
+                await target.add_reaction(payload)
+            except HTTPException as e:
+                print(f"Failed to handle reaction: {e}\nNot deleting original message.", file=sys.stderr)            
+        # Handle removing a reaction
+        else:
+            try:
+                await target.remove_reaction(payload, self.user)
+            except HTTPException as e:
+                print(f"Failed to handle reaction: {e}\nNot deleting original message.", file=sys.stderr)  
 
     @staticmethod
     async def proxy(message: Message, new_content: str):
@@ -337,57 +410,33 @@ class SeanceClient(discord.Client):
         except HTTPException as e:
             print(f"Failed to delete command message: {e}.", sys.stderr)
 
+    async def handle_simple_reaction(self, message: Message, content: str):
+        target = await self._get_shortcut_target(message)
+        await self._handle_reaction(target, content[1], content[0] == '+') 
 
-    async def handle_reaction(self, message:Message, shortcut:str):
+    async def handle_custom_reaction(self, message: Message, content: str):
         """ Adds or removes the bot's reaction to a given message """
-
-        # If the command replied to a message, then use that to get the message to edit.
-        if message.reference is not None:
-            target = message.reference.resolved
-
-        # Otherwise, assume the most recent (non-invoking) message.
-        else:
-            prev_messages = message.channel.history(limit=2)
-            target = None
-            async for msg in prev_messages:
-                if msg.id != message.id:
-                    target = msg
-                    break
+        target = await self._get_shortcut_target(message)
         
-        # Handle failure case (empty channel).
-        if target is None:
-            print("Reaction requested but no target was found in channel!")
-            return
+        group_dict = DISCORD_REACTION_SHORTCUT_PATTERN.fullmatch(content).groupdict()
 
-        short_dict = shortcut.groupdict()
-
-        # Find the emoji.
-        for emoji in self.emojis:
-            if emoji.id == int(short_dict["id"]):
-                payload = emoji
-                break
+        # Find the emoji in the client cache.
+        if emoji := self.get_emoji(int(group_dict["id"])):
+            payload = emoji
         else:
-            # Ensure you've got a full message not the reply object
-            if message.reference is not None:
-                target = await message.channel.fetch_message(target.id)
             print(target.reactions)
+            # Fail over to searching the messaage reactions.
             for react in target.reactions:
                 print(react)
-                if react.emoji.id == int(short_dict["id"]):
+                if react.emoji.id == int(group_dict["id"]):
                     payload = react.emoji
                     break
+            # Fail out.
             else:
                 print("Cannot use the emoji given.")
                 return
 
-
-        # Handle adding a reaction
-        if short_dict["action"] == '+':
-            await target.add_reaction(payload)
-        # Handle removing a reaction
-        else:
-            await target.remove_reaction(payload, self.user)
-
+        self._handle_reaction(target, payload, group_dict["action"] == '+')
 
     #
     # discord.py event handler overrides.
@@ -414,36 +463,11 @@ class SeanceClient(discord.Client):
             return
 
         # See if the message matches the pattern that indicates we should proxy it.
-        matches = self.pattern.match(message.content)
-        if matches:
-            new_content = matches.groupdict()['content']
-            if new_content:
-                new_content = new_content.strip()
+        if matches := self.pattern.match(message.content):
+            await self._handle_content(message, matches.groupdict()['content'])
 
-            # Check if it is a shortcut reaction command.
-            if shortcut := DISCORD_REACTION_SHORTCUT_PATTERN.fullmatch(new_content):
-                # Now actually proxy the message.
-                try:
-                    await self.handle_reaction(message, shortcut)
-                except HTTPException as e:
-                    print(f"Failed to handle reaction: {e}\nNot deleting original message.", file=sys.stderr)
-                    return
-            else:
-                # Now actually proxy the message.
-                try:
-                    await self.proxy(message, new_content)
-                except HTTPException as e:
-                    print(f"Failed to proxy message: {e}\nNot deleting original message.", file=sys.stderr)
-                    return
-
-            # Delete the original message.
-            try:
-                await message.delete()
-            except HTTPException as e:
-                print(f"Failed to delete original message: {e}.", file=sys.stderr)
-
+        # Otherwise check for command prefixes.
         else:
-
             for string, handler in self.command_handlers.items():
                 if self._matches_command(message.content, string):
                     await handler(message)
@@ -465,24 +489,8 @@ class SeanceClient(discord.Client):
 
         # Normal proxy handling follows.
 
-        matches = self.pattern.match(after.content)
-        if matches:
-            new_content = matches.groupdict()['content']
-            if new_content:
-                new_content = new_content.strip()
-
-            # Proxy the message.
-            try:
-                await self.proxy(after, new_content)
-            except HTTPException as e:
-                print(f"Failed to proxy message: {e}\nNot deleting original message.", file=sys.stderr)
-                return
-
-            # Delete the original message.
-            try:
-                await after.delete()
-            except HTTPException as e:
-                print(f"Failed to delete original message: {e}.", file=sys.stderr)
+        if matches := self.pattern.match(message.content):
+            await self._handle_content(message, matches.groupdict()['content'])
 
 
     async def on_presence_update(self, _before: Member, after: Member):
