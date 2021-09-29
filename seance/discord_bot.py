@@ -9,9 +9,9 @@ from typing import Union
 
 import discord
 from discord import Message, Member, Status
+from discord import reaction
 from discord.activity import Activity, ActivityType
 from discord.errors import HTTPException
-from discord.guild import Guild
 from discord.message import PartialMessage
 
 import PythonSed
@@ -28,6 +28,9 @@ DISCORD_MESSAGE_URL_PATTERN = re.compile(r'https://(?:\w+.)?discord(?:app)?.com/
 
 # A pattern for matching Discord activities (https://discord.com/developers/docs/topics/gateway#activity-object).
 DISCORD_STATUS_PATTERN = re.compile(r'(?P<type>playing|streaming|listening to|watching|competing in)?\s*(?P<name>.+)', re.IGNORECASE | re.DOTALL)
+
+# A pattern for matching the reaction add and remove shortcuts in the standard client.
+DISCORD_REACTION_SHORTCUT_PATTERN = re.compile(r'(?P<action>[+-])\<a?:(?P<name>\w{2,}):(?P<id>\d+)\>')
 
 
 class KeepCurrentSentinel:
@@ -335,6 +338,57 @@ class SeanceClient(discord.Client):
             print(f"Failed to delete command message: {e}.", sys.stderr)
 
 
+    async def handle_reaction(self, message:Message, shortcut:str):
+        """ Adds or removes the bot's reaction to a given message """
+
+        # If the command replied to a message, then use that to get the message to edit.
+        if message.reference is not None:
+            target = message.reference.resolved
+
+        # Otherwise, assume the most recent (non-invoking) message.
+        else:
+            prev_messages = message.channel.history(limit=2)
+            target = None
+            async for msg in prev_messages:
+                if msg.id != message.id:
+                    target = msg
+                    break
+        
+        # Handle failure case (empty channel).
+        if target is None:
+            print("Reaction requested but no target was found in channel!")
+            return
+
+        short_dict = shortcut.groupdict()
+
+        # Find the emoji.
+        for emoji in self.emojis:
+            if emoji.id == int(short_dict["id"]):
+                payload = emoji
+                break
+        else:
+            # Ensure you've got a full message not the reply object
+            if message.reference is not None:
+                target = await message.channel.fetch_message(target.id)
+            print(target.reactions)
+            for react in target.reactions:
+                print(react)
+                if react.emoji.id == int(short_dict["id"]):
+                    payload = react.emoji
+                    break
+            else:
+                print("Cannot use the emoji given.")
+                return
+
+
+        # Handle adding a reaction
+        if short_dict["action"] == '+':
+            await target.add_reaction(payload)
+        # Handle removing a reaction
+        else:
+            await target.remove_reaction(payload, self.user)
+
+
     #
     # discord.py event handler overrides.
     #
@@ -366,12 +420,21 @@ class SeanceClient(discord.Client):
             if new_content:
                 new_content = new_content.strip()
 
-            # Now actually proxy the message.
-            try:
-                await self.proxy(message, new_content)
-            except HTTPException as e:
-                print(f"Failed to proxy message: {e}\nNot deleting original message.", file=sys.stderr)
-                return
+            # Check if it is a shortcut reaction command.
+            if shortcut := DISCORD_REACTION_SHORTCUT_PATTERN.fullmatch(new_content):
+                # Now actually proxy the message.
+                try:
+                    await self.handle_reaction(message, shortcut)
+                except HTTPException as e:
+                    print(f"Failed to handle reaction: {e}\nNot deleting original message.", file=sys.stderr)
+                    return
+            else:
+                # Now actually proxy the message.
+                try:
+                    await self.proxy(message, new_content)
+                except HTTPException as e:
+                    print(f"Failed to proxy message: {e}\nNot deleting original message.", file=sys.stderr)
+                    return
 
             # Delete the original message.
             try:
