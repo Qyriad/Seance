@@ -1,7 +1,5 @@
 """ The Discord bot version of Seance. """
 
-from logging import Handler
-from operator import truediv
 import os
 import re
 import sys
@@ -77,7 +75,7 @@ class SeanceClient(discord.Client):
             '!status': self.handle_status_command,
             '!presence': self.handle_presence_command,
         }
-        
+
         self.shortcut_handlers = {
             self._matches_simple_react: self.handle_simple_reaction,
             self._matches_custom_react: self.handle_custom_reaction,
@@ -87,14 +85,17 @@ class SeanceClient(discord.Client):
     def _matches_command(self, content, command):
         return content.startswith(command) or content.startswith(f"{self.command_prefix}{command}")
 
+
     def _matches_simple_react(self, content):
         return content[0] in "+-" and is_emoji(content[1:])
+
 
     def _matches_custom_react(self, content):
         if DISCORD_REACTION_SHORTCUT_PATTERN.fullmatch(content):
             return True
         else:
             return False
+
 
     async def _set_presence(self, *, activity=keep_current, status=keep_current):
         """ Allows setting activity and status separately without messing with each other. """
@@ -135,9 +136,9 @@ class SeanceClient(discord.Client):
                 if msg.id != message.id:
                     target = msg
                     break
-        
+
         return target
-        
+
 
     async def _get_target_message_and_args(self, message: Message, command_terminator=' '):
         """ Parse out a target message and remaining arguments from a message.
@@ -205,6 +206,7 @@ class SeanceClient(discord.Client):
 
     async def _handle_content(self, message: Message, content: str):
         """ Interal handler for a message of content to be handled. """
+
         if content:
             content = content.strip()
 
@@ -227,9 +229,11 @@ class SeanceClient(discord.Client):
             await message.delete()
         except HTTPException as e:
             print(f"Failed to delete original message: {e}.", file=sys.stderr)
-    
+
+
     async def _handle_reaction(self, target: Message, payload: Union[Emoji, str], adding: bool):
         """ Handles adding or removing a reaction to a target message. """
+
         if adding:
             try:
                 await target.add_reaction(payload)
@@ -309,7 +313,6 @@ class SeanceClient(discord.Client):
             await message.delete()
         except HTTPException as e:
             print(f"Failed to delete command message: {e}.")
-
 
 
     async def handle_edit_command(self, message: Message):
@@ -413,31 +416,33 @@ class SeanceClient(discord.Client):
         except HTTPException as e:
             print(f"Failed to delete command message: {e}.", sys.stderr)
 
+
     async def handle_simple_reaction(self, message: Message, content: str):
         """ Adds or removes a simple emoji reaction to a given message """
+
         target = await self._get_shortcut_target(message)
         await self._handle_reaction(target, content[1], content[0] == '+') 
 
+
     async def handle_custom_reaction(self, message: Message, content: str):
         """ Adds or removes a custom emoji reaction to a given message """
+
         target = await self._get_shortcut_target(message)
-        
+
         group_dict = DISCORD_REACTION_SHORTCUT_PATTERN.fullmatch(content).groupdict()
 
         # Find the emoji in the client cache.
         if emoji := self.get_emoji(int(group_dict["id"])):
             payload = emoji
         else:
-            print(target.reactions)
             # Fail over to searching the messaage reactions.
             for react in target.reactions:
-                print(react)
                 if react.emoji.id == int(group_dict["id"]):
                     payload = react.emoji
                     break
             # Fail out.
             else:
-                print("Cannot use the emoji given.")
+                print(f"Custom Emoji ({content[1:]}) out of scope; not directly accessible by bot or present in message reactions.", file=sys.stderr)
                 return
 
         await self._handle_reaction(target, payload, group_dict["action"] == '+')
