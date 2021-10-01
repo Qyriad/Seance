@@ -498,8 +498,8 @@ class SeanceClient(discord.Client):
 
         # Normal proxy handling follows.
 
-        if matches := self.pattern.match(message.content):
-            await self._handle_content(message, matches.groupdict()['content'])
+        if matches := self.pattern.match(after.content):
+            await self._handle_content(after, matches.groupdict()['content'])
 
 
     async def on_presence_update(self, _before: Member, after: Member):
