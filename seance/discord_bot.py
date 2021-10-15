@@ -87,7 +87,11 @@ class SeanceClient(discord.Client):
 
 
     def _matches_simple_react(self, content):
-        return content[0] in "+-" and is_emoji(content[1:])
+
+        if len(content) > 1:
+            return content[0] in "+-" and is_emoji(content[1:])
+        else:
+            return False
 
 
     def _matches_custom_react(self, content):
