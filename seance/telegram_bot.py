@@ -42,7 +42,9 @@ class SeanceClient:
         for entity in entities:
             entity.offset -= entity_shift
 
-        context.bot.send_message(message.chat_id, new_content, reply_to_message_id=reply_id, entities=entities)
+        # Always disable notifications on the proxied message; if original has it disabled, this ensures it doesn't
+        # get undone by the proxied message, otherwise it prevents a double notification.
+        context.bot.send_message(message.chat_id, new_content, disable_notification=True, reply_to_message_id=reply_id, entities=entities)
 
 
     def on_message(self, update: Update, context: CallbackContext):
