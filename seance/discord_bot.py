@@ -257,11 +257,14 @@ class SeanceClient(discord.Client):
         # Copy over any attachments, and copy the inline reply if any.
         files = [await att.to_file() for att in message.attachments]
         ref = message.reference
+        mention_flag = True
         if ref is not None:
             ref.fail_if_not_exists = False
+            if message.reference.resolved.author.id not in map(lambda x: x.id, message.mentions):
+                mention_flag = False
 
         # Send the new message.
-        await message.channel.send(new_content, files=files, reference=ref)
+        await message.channel.send(new_content, files=files, reference=ref, mention_author=mention_flag)
 
 
     async def handle_substitute_command(self, message: Message):
