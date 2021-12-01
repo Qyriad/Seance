@@ -30,26 +30,34 @@ class SeanceClient:
 
     def proxy(self, context: CallbackContext, message: telegram.Message, new_content: str, entity_shift: int):
 
-        # FIXME: handle attachments
-
         # Man I wish Python had a null-coalescing member access operator.
         reply_id = message.reply_to_message.message_id if message.reply_to_message is not None else None
 
         # Rich text in Telegram is specified by an index, but we've changed the content, so those indicies are no
         # longer valid. So we have to shift those indecies by however much we changed the start of the content.
 
-        entities = message.entities[:]
+        entities = message.entities[:] if message.entities is not None else message.caption_entities[:]
         for entity in entities:
             entity.offset -= entity_shift
+        
+        # FIXME: handle non-photo, non-video attachement and media groups (more than one photo/video or combined photo+video)
 
-        context.bot.send_message(message.chat_id, new_content, reply_to_message_id=reply_id, entities=entities)
+        if message.video:
+            context.bot.send_video(message.chat_id, message.video, caption=new_content, reply_to_message_id=reply_id, caption_entities=entities)
+        elif message.photo:
+            # Assume that the largest number of pixels is the best version of the photo available?
+            largest_photo = max(message.photo, key=lambda photo : photo.width*photo.height)
+            context.bot.send_photo(message.chat_id, largest_photo, caption=new_content, reply_to_message_id=reply_id, caption_entities=entities)
+        else:
+            context.bot.send_message(message.chat_id, new_content, reply_to_message_id=reply_id, entities=entities)
 
 
     def on_message(self, update: Update, context: CallbackContext):
 
         message: telegram.Message = update.message
 
-        matches = self.pattern.match(message.text)
+        text = message.text if message.text is not None else message.caption
+        matches = self.pattern.match(text)
         if matches:
 
             new_content = matches.groupdict()['content']
