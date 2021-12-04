@@ -25,6 +25,9 @@ except ImportError:
     pass
 
 
+from ..config import ConfigOption, ConfigHandler
+
+
 # A pattern that matches a link to a Discord message, and captures the channel ID and message ID.
 DISCORD_MESSAGE_URL_PATTERN = re.compile(r'https://(?:\w+.)?discord(?:app)?.com/channels/\d+/(\d+)/(\d+)')
 
@@ -46,7 +49,7 @@ def running_in_systemd() -> bool:
 
 class SeanceClient(discord.Client):
 
-    def __init__(self, ref_user_id, pattern, command_prefix, sdnotify=False, *args, **kwargs):
+    def __init__(self, ref_user_id, pattern, command_prefix, *args, sdnotify=False, **kwargs):
 
         self.ref_user_id = ref_user_id
 
@@ -242,13 +245,13 @@ class SeanceClient(discord.Client):
             try:
                 await target.add_reaction(payload)
             except HTTPException as e:
-                print(f"Failed to handle reaction: {e}\nNot deleting original message.", file=sys.stderr)            
+                print(f"Failed to handle reaction: {e}\nNot deleting original message.", file=sys.stderr)
         # Handle removing a reaction
         else:
             try:
                 await target.remove_reaction(payload, self.user)
             except HTTPException as e:
-                print(f"Failed to handle reaction: {e}\nNot deleting original message.", file=sys.stderr)  
+                print(f"Failed to handle reaction: {e}\nNot deleting original message.", file=sys.stderr)
 
     @staticmethod
     async def proxy(message: Message, new_content: str):
@@ -428,7 +431,7 @@ class SeanceClient(discord.Client):
         """ Adds or removes a simple emoji reaction to a given message """
 
         target = await self._get_shortcut_target(message)
-        await self._handle_reaction(target, content[1], content[0] == '+') 
+        await self._handle_reaction(target, content[1], content[0] == '+')
 
 
     async def handle_custom_reaction(self, message: Message, content: str):
@@ -527,54 +530,57 @@ class SeanceClient(discord.Client):
 
 def main():
 
-    parser = argparse.ArgumentParser('seance-discord')
-    parser.add_argument('--token', required=False, action='store', type=str,
-        help="The token to use for authentication. Required or `$SEANCE_DISCORD_TOKEN` environment variable.")
-    parser.add_argument('--ref-user-id', required=False, action='store', type=int, metavar='ID',
-        help="The ID of the message to recognize messages to proxy from. "
-            "Required or `$SEANCE_DISCORD_REF_USER_ID` environment variable.")
-    parser.add_argument('--pattern', required=False, action='store', type=str,
-        help="The Python regex used to match messages. Must have a named capture group called `content`. "
-            "Required or `$SEANCE_DISCORD_PATTERN` environment variable.")
-    parser.add_argument('--prefix', required=False, action='store', type=str, default='',
-        help="An additional prefix to accept commands with.")
+    options = [
+        ConfigOption(name='token', required=True,
+            help="The token to use for authentication. Required."
+        ),
+        ConfigOption(name='ref user ID', required=True, metavar='ID', type=int,
+            help="The ID of the user to recognize messages to proxy from."
+        ),
+        ConfigOption(name='pattern', required=True,
+            help="The Python regex used to match messages. Must have a named capture group called `content`."
+        ),
+        ConfigOption(name='prefix', required=False, default='',
+            help="An additional prefix to accept commands with."
+        ),
+    ]
 
     sdnotify_available = 'sdnotify' in sys.modules
     help_addendum = ' (Requires `sdnotify` Python package, not found.)' if not sdnotify_available else ''
-    parser.add_argument('--systemd-notify', required=False, action='store_true', default=False,
-        help=f'Notify systemd when startup is complete.{help_addendum}')
+    options.append(ConfigOption(name='systemd notify', required=False, default=None, type=bool,
+        help=f'Notify systemd when startup is complete.{help_addendum}'
+    ))
 
-    args = parser.parse_args()
+    help_epilog = ("All options can also be specified in an INI config (path passed with `--config`) "
+        "as `key = value` under a section called `[Discord]`, where the key name is the option name "
+        "without the leading -- (words can be separated by dashes, underscores, or spaces).\n"
+        "Options can also be specified as environment variables, where the name of the variable is "
+        "`SEANCE_DISCORD_` followed by the name of the option in SCREAMING_SNAKE_CASE."
+    )
 
-    token = args.token if args.token else os.getenv("SEANCE_DISCORD_TOKEN")
-    if not token:
-        parser.error("--token required or $SEANCE_DISCORD_TOKEN")
+    config_handler = ConfigHandler(options, env_var_prefix='SEANCE_DISCORD_', config_section='Discord',
+        argparse_init_kwargs={ 'prog': 'seance-discord', 'epilog': help_epilog },
+    )
 
-    ref_user_id = args.ref_user_id if args.ref_user_id else os.getenv("SEANCE_DISCORD_REF_USER_ID")
-    try:
-        ref_user_id = int(ref_user_id)
-    except (ValueError, TypeError):
-        parser.error("--ref-user-id required or $SEANCE_DISCORD_REF_USER_ID")
-
-    pattern = args.pattern if args.pattern else os.getenv('SEANCE_DISCORD_PATTERN')
-    if not pattern:
-        parser.error("--pattern required or $SEANCE_DISCORD_PATTERN")
+    options = config_handler.parse_all_sources()
 
     try:
-        pattern = re.compile(pattern, re.DOTALL)
-    except re.error as e:
-        print('Invalid regular expression given for --patern', file=sys.stderr)
+        pattern = re.compile(options.pattern, re.DOTALL)
+    except:
+        print('Invalid regular expression given for --pattern', file=sys.stderr)
         raise
 
     if 'content' not in pattern.groupindex:
-        parser.error('Regex pattern must have a named capture group called `content` (see https://docs.python.org/3/library/re.html#index-17)')
+        options.argparser.error('regex pattern must have a named capture group called `content` (see https://docs.python.org/3/library/re.html#index-13')
 
-    if args.systemd_notify and not sdnotify_available:
-        parser.error('--systemd-notify passed but `sdnotify` Python package not available. Try `pip3 install sdnotify`?')
+    if options.systemd_notify and not sdnotify_available:
+        options.argparser.error('--systemd-notify specified but `sdnotify` Python package not available. Try `pip3 install sdnotify`?')
 
     if running_in_systemd():
-        if not args.systemd_notify:
-            print("Warning: you seem to be running in a systemd service, but --systemd-notify was not passed.", file=sys.stderr)
+        if not options.systemd_notify:
+            print("Warning: you seem to be running in a systemd service, but --systemd-notify was not passed.",
+                file=sys.stderr
+            )
             print("Warning: systemd will not properly detect if Séance fails to start.", file=sys.stderr)
 
         if not sys.stdout.write_through:
@@ -582,14 +588,15 @@ def main():
             print("Warning: Séance's output will not properly redirect to systemd-journald. Set $PYTHONUNBUFFERED=1", file=sys.stderr)
             sys.stderr.flush()
 
-    # Ensure we can access member lists and collections of their presences.
     intents = discord.Intents.default()
     intents.members = True
     intents.presences = True
-
-    client = SeanceClient(ref_user_id, pattern, args.prefix, sdnotify=args.systemd_notify, intents=intents)
+    client = SeanceClient(options.ref_user_id, pattern, options.prefix,
+        sdnotify=options.systemd_notify,
+        intents=intents,
+    )
     print("Starting Séance Discord bot.")
-    client.run(token)
+    client.run(options.token)
 
 
 if __name__ == '__main__':
