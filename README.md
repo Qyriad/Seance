@@ -35,6 +35,16 @@ Such a user can be created with `sudo useradd seance`. To avoid installing Séan
 To install seance and sdnotify for this user use `sudo -u seance pip3 install --user sdnotify git+https://github.com/Qyriad/Seance`.
 
 
+### Discord DM Mode
+
+TODO: fill this out more >.>
+
+#### Limitations:
+
+- Bots do not receive typing notifications in DMs, so typing notification in a DM to the Séance user will not be proxied to the DM server.
+- Bots cannot be added to group DMs, so neither can Séance users
+
+
 ## Comparison to PluralKit
 
 Pros of Séance over PluralKit on Discord:
