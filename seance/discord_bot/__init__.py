@@ -3,6 +3,8 @@
 import os
 import re
 import sys
+import json
+import asyncio
 import argparse
 from io import StringIO
 from typing import Union
@@ -13,6 +15,10 @@ from discord import Emoji
 from discord.activity import Activity, ActivityType
 from discord.errors import HTTPException
 from discord.message import PartialMessage
+
+# import discord_slash
+# from discord_slash.utils.manage_commands import create_option
+# from discord_slash.model import SlashCommandOptionType
 
 import PythonSed
 from PythonSed import Sed
@@ -26,6 +32,7 @@ except ImportError:
 
 
 from ..config import ConfigOption, ConfigHandler
+from .dm_mode import DiscordDMGuildManager
 
 
 # A pattern that matches a link to a Discord message, and captures the channel ID and message ID.
@@ -49,7 +56,7 @@ def running_in_systemd() -> bool:
 
 class SeanceClient(discord.Client):
 
-    def __init__(self, ref_user_id, pattern, command_prefix, *args, sdnotify=False, **kwargs):
+    def __init__(self, ref_user_id, pattern, command_prefix, *args, dm_guild_id=None, dm_manager_options=None, sdnotify=False, **kwargs):
 
         self.ref_user_id = ref_user_id
 
@@ -60,9 +67,10 @@ class SeanceClient(discord.Client):
             self.pattern = pattern
 
         self.command_prefix = command_prefix
+        self.dm_guild_id = dm_guild_id
         self.sdnotify = sdnotify
 
-        super().__init__(*args, **kwargs)
+        super().__init__(*args, enable_debug_events=True, **kwargs)
 
         # Store any status overrides present.
         self._status_override = None
@@ -83,6 +91,11 @@ class SeanceClient(discord.Client):
             self._matches_simple_react: self.handle_simple_reaction,
             self._matches_custom_react: self.handle_custom_reaction,
         }
+
+
+        self.dm_guild_manager = None
+        self.dm_manager_options = dm_manager_options if dm_manager_options is not None else {}
+        self.slash = None
 
 
     def _matches_command(self, content, command):
@@ -457,11 +470,28 @@ class SeanceClient(discord.Client):
 
         await self._handle_reaction(target, payload, group_dict["action"] == '+')
 
+
+    async def handle_newdm_command(self, accountish):
+        print("account: {}".format(accountish))
+
     #
     # discord.py event handler overrides.
     #
 
+    async def on_socket_raw_receive(self, data):
+
+        if self.dm_guild_manager is not None:
+            await self.dm_guild_manager.slash.on_socket_response(json.loads(data))
+
+
     async def on_ready(self):
+
+        if self.dm_guild_manager is None and self.dm_guild_id is not None:
+
+            print("DM mode enabled for server ID {}".format(self.dm_guild_id))
+            guild = await self.fetch_guild(self.dm_guild_id)
+            self.dm_guild_manager = DiscordDMGuildManager(self, guild, pattern=self.pattern, **self.dm_manager_options)
+            await self.dm_guild_manager.setup()
 
         print("Séance Discord client startup complete.")
 
@@ -471,19 +501,45 @@ class SeanceClient(discord.Client):
             notifer.notify("READY=1")
 
 
+    async def on_typing(self, channel, user, when):
+
+        if self.dm_guild_manager is not None:
+            await self.dm_guild_manager.handle_typing(channel, user, when)
+
+
     async def on_message(self, message: Message):
 
         # Sometimes message.content seems to be not-populated. Dunno why, but we can re-fetch to populate it.
         if not message.content:
             message = await self._refetch_message(message)
 
-        # Only do anything with messages from the reference account.
+
+        # If the message was a DM to this bot, and DM management is enabled, handle that.
+        if self.dm_guild_manager is not None:
+
+            if isinstance(message.channel, discord.DMChannel) and message.author.id != self.user.id:
+                await self.dm_guild_manager.handle_dm_to_server(message)
+                return
+
+
+        # Otherwise, only do anything with messages from the reference account.
         if message.author.id != self.ref_user_id:
             return
+
+
+        # If the message was sent in the designated DM guild, and DM management is enabled,
+        # then proxy the message as a DM.
+        if self.dm_guild_manager is not None:
+
+            if message.channel.guild.id == self.dm_guild_id:
+                await self.dm_guild_manager.handle_server_to_dm(message)
+                return
+
 
         # See if the message matches the pattern that indicates we should proxy it.
         if matches := self.pattern.match(message.content):
             await self._handle_content(message, matches.groupdict()['content'])
+
 
         # Otherwise check for command prefixes.
         else:
@@ -492,11 +548,38 @@ class SeanceClient(discord.Client):
                     await handler(message)
                     break
 
+
     async def on_message_edit(self, before: Message, after: Message):
 
         # Sometimes the content seems to be not-populated. Dunno why, but we can re-fetch to populate it.
         if not after.content:
             after = await self._refetch_message(after)
+
+        # # If the edited message was a DM to this bot, and DM management is enabled, handle that.
+        # if self.dm_guild_manager is not None:
+
+            # if isinstance(after.channel, discord.DMChannel) and after.author.id != self.user.id:
+                # await self.dm_guild_manager.handle_dm_to_server_edit(after)
+                # return
+
+
+        # With DM mamagement enabled, there are extra cases we care about.
+        if self.dm_manager is not None:
+
+
+            # Or, if the edit is not from this bot, and it's in a DM to this bot, proxy that through.
+            if after.author.id != self.user.id and after.channel.type == ChannelType.private:
+                self.dm_guild_manager.handle_dm_to_server_edit(after)
+                return
+
+
+            # Or, if the edit is from this bot, and we're in the DM server, proxy that through.
+            guild_id = after.guild.id if after.guild is not None else None
+            if after.author.id == self.user.id and guild_id == self.dm_guild_id:
+                self.dm_guild_manager.handle_server_to_dm_edit(after)
+                return
+
+
 
         # We only care about messages from the reference account.
         if after.author.id != self.ref_user_id:
@@ -532,16 +615,22 @@ def main():
 
     options = [
         ConfigOption(name='token', required=True,
-            help="The token to use for authentication. Required."
+            help="The token to use for authentication. Required.",
         ),
         ConfigOption(name='ref user ID', required=True, metavar='ID', type=int,
-            help="The ID of the user to recognize messages to proxy from."
+            help="The ID of the user to recognize messages to proxy from.",
         ),
         ConfigOption(name='pattern', required=True,
-            help="The Python regex used to match messages. Must have a named capture group called `content`."
+            help="The Python regex used to match messages. Must have a named capture group called `content`.",
         ),
         ConfigOption(name='prefix', required=False, default='',
-            help="An additional prefix to accept commands with."
+            help="An additional prefix to accept commands with.",
+        ),
+        ConfigOption(name='DM server ID', required=False, default=None, metavar='ID', type=int,
+            help="The guild to use as the DM server. Not passing this disables DM mode.",
+        ),
+        ConfigOption(name='DM proxy untagged', required=False, default=None, type=bool,
+            help="When using DM mode, proxy untagged messages in the DM server.",
         ),
     ]
 
@@ -593,6 +682,8 @@ def main():
     intents.presences = True
     client = SeanceClient(options.ref_user_id, pattern, options.prefix,
         sdnotify=options.systemd_notify,
+        dm_guild_id=options.dm_server_id,
+        dm_manager_options=dict(proxy_untagged=options.dm_proxy_untagged),
         intents=intents,
     )
     print("Starting Séance Discord bot.")
