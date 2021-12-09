@@ -272,7 +272,7 @@ class DiscordDMGuildManager:
 
         friends_list_channel = discord.utils.find(lambda ch : ch.name == 'friends-list', admin_category.channels)
         if friends_list_channel is None:
-            friends_list_channel = await category.create_text_channel('friends-list')
+            friends_list_channel = await admin_category.create_text_channel('friends-list')
 
         self.friends_list_channel = friends_list_channel
 
