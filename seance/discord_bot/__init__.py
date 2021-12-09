@@ -564,7 +564,7 @@ class SeanceClient(discord.Client):
 
 
         # With DM mamagement enabled, there are extra cases we care about.
-        if self.dm_manager is not None:
+        if self.dm_guild_manager is not None:
 
 
             # Or, if the edit is not from this bot, and it's in a DM to this bot, proxy that through.
