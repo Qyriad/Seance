@@ -13,13 +13,13 @@ from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, Callb
 
 class SeanceClient:
 
-    def __init__(self, ref_username, pattern, token):
+    def __init__(self, ref_usernames, pattern, token):
 
-        self.ref_username = ref_username
+        self.ref_usernames = ref_usernames
         self.pattern = re.compile(pattern, re.DOTALL)
 
         self.updater = Updater(token=token, use_context=True)
-        message_filter = Filters.update.message & (~Filters.command) & Filters.user(username=self.ref_username)
+        message_filter = Filters.update.message & (~Filters.command) & Filters.user(username=self.ref_usernames)
         message_handler = MessageHandler(message_filter, self.on_message)
         self.updater.dispatcher.add_handler(message_handler)
 
@@ -90,8 +90,9 @@ def main():
     parser.add_argument('--token', required=False, action='store', type=str,
         help="The token to use for authentication. Required or `$SEANCE_TELEGRAM_TOKEN` environment variable.")
     parser.add_argument('--ref-username', required=False, action='store', type=str,
-        help="The username of the user to recognize messages to proxy from. "
-        "Required or `$SEANCE_TELEGRAM_REF_USERNAME` environment variable.")
+        help="The username(s) of the user to recognize messages to proxy from. "
+        "Required or `$SEANCE_TELEGRAM_REF_USERNAME` environment variable. "
+        "Multiple usernames can be separated with commas.")
     parser.add_argument('--pattern', required=True, action='store', type=str,
         help="The Python regex to use to match messages. Must have a capture group named `content`.")
 
@@ -99,9 +100,11 @@ def main():
 
     token = args.token if args.token else os.getenv("SEANCE_TELEGRAM_TOKEN")
     ref_username = args.ref_username if args.ref_username else os.getenv("SEANCE_TELEGRAM_REF_USERNAME")
+    ref_usernames = set(ref_username.split(','))
+
     pattern = args.pattern
 
-    bot = SeanceClient(ref_username, pattern, token)
+    bot = SeanceClient(ref_usernames, pattern, token)
 
     bot.run()
 
