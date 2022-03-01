@@ -8,7 +8,7 @@ Type=notify
 Environment="PYTHONUNBUFFERED=1"
 Environment="SEANCE_DISCORD_TOKEN=TOKEN_HERE"
 Environment="SEANCE_DISCORD_REF_USER_ID=YOUR_USER_ID_HERE"
-ExecStart=/usr/bin/python3 -m seance.discord_bot --systemd-notify --pattern "REGEX_HERE"
+ExecStart=seance-discord --systemd-notify --pattern "REGEX_HERE"
 Restart=always
 User=seance
 

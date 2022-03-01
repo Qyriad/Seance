@@ -6,12 +6,12 @@
 
 Séance is written in Python, and as such can be easily installed via pip: `pip3 install git+https://github.com/Qyriad/Seance`.
 
-Once it is installed, the Discord bot can be run with `python3 -m seance.discord_bot`. The Discord bot requires a Discord [bot token](https://discord.com/developers/applications) passed with `--token` or the `$SEANCE_DISCORD_TOKEN` environment variable, the [snowflake ID](https://discord.com/developers/docs/resources/user#user-object-user-structure) of the user to recognize messages to proxy from passed with `--ref-user-id` or the `$SEANCE_DISCORD_REF_USER_ID` environment variable, and a pattern in [Python regex](https://docs.python.org/3/library/re.html#regular-expression-syntax) passed with `--pattern` or the `$SEANCE_DISCORD_PATTERN` environment variable. The pattern must include a [named capture group](https://docs.python.org/3/library/re.html#index-17) called `content`, which defines the content to proxy.
+Once it is installed, the Discord bot can be run with `seance-discord`. The Discord bot requires a Discord [bot token](https://discord.com/developers/applications) passed with `--token` or the `$SEANCE_DISCORD_TOKEN` environment variable, the [snowflake ID](https://discord.com/developers/docs/resources/user#user-object-user-structure) of the user to recognize messages to proxy from passed with `--ref-user-id` or the `$SEANCE_DISCORD_REF_USER_ID` environment variable, and a pattern in [Python regex](https://docs.python.org/3/library/re.html#regular-expression-syntax) passed with `--pattern` or the `$SEANCE_DISCORD_PATTERN` environment variable. The pattern must include a [named capture group](https://docs.python.org/3/library/re.html#index-17) called `content`, which defines the content to proxy.
 
 Okay, that sounds really complicated, so here's an example, where the format for proxying messages is anything that starts `b:` — capital or lowercase.
 
 ```sh
-$ python3 -m seance.discord_bot --token ODDFOFXUpgf7yEntul5ockCA.OFk6Ph.lmsA54bT0Fux1IpsYvey5XuZk04 --ref-user-id 188344527881400991 --pattern "[bB]:(?P<content>.*)"
+$ seance-discord --token ODDFOFXUpgf7yEntul5ockCA.OFk6Ph.lmsA54bT0Fux1IpsYvey5XuZk04 --ref-user-id 188344527881400991 --pattern "[bB]:(?P<content>.*)"
 ```
 
 Note that the Discord bot also requires the Presence and Server Members Privileged Gateway Intents, which can be enabled in the "Bot" settings of the Discord application page.
