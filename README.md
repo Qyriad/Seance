@@ -16,6 +16,21 @@ $ seance-discord --token ODDFOFXUpgf7yEntul5ockCA.OFk6Ph.lmsA54bT0Fux1IpsYvey5Xu
 
 Note that the Discord bot also requires the Presence and Server Members Privileged Gateway Intents, which can be enabled in the "Bot" settings of the Discord application page.
 
+### Config File
+
+Anything that can be passed as a command-line option can also be specified an INI config file. Options for the Discord bot are placed under a `[Discord]` section, with the name of the INI key being the same as the command-line option without the leading `--`. Words can be separated by dashes, underscores, or spaces. For example, `--ref-user-id 188344527881400991` can be any of the following:
+```ini
+ref_user_id = 188344527881400991
+ref user id = 188344527881400991
+ref-user-id = 188344527881400991
+```
+
+Specify the config file to use on the command-line with `--config /path/to/file` (this is the one option that cannot itself be passed in a config file 😉).
+
+An example configuration file (which is functionally identical to the `seance-discord` CLI example invocation above) can be found in [contrib/](contrib/seance.ini).
+
+### Commands
+
 Once started, the bot also accepts a few chat commands:
 - `!edit [reply|link] <new content>` — takes a reply or a link to a message, and the new message content
 - `!s/pattern/replacement` — takes a reply, and a sed-style substitution command to edit a message
