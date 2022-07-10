@@ -10,7 +10,7 @@ from io import StringIO
 from typing import Union
 
 import discord
-from discord import Message, Member, Status
+from discord import Message, Member, Status, ChannelType
 from discord import Emoji
 from discord.activity import Activity, ActivityType
 from discord.errors import HTTPException
@@ -137,7 +137,7 @@ class SeanceClient(discord.Client):
         """ For some reason, message.content doesn't always seem to be populated properly, so sometimes we have
         to re-fetch the message.  """
 
-        return await message.channel.fetch_message(message)
+        return await message.channel.fetch_message(message.id)
 
 
     async def _get_shortcut_target(self, message: Message):
@@ -478,12 +478,6 @@ class SeanceClient(discord.Client):
     # discord.py event handler overrides.
     #
 
-    async def on_socket_raw_receive(self, data):
-
-        if self.dm_guild_manager is not None:
-            await self.dm_guild_manager.slash.on_socket_response(json.loads(data))
-
-
     async def on_ready(self):
 
         if self.dm_guild_manager is None and self.dm_guild_id is not None:
@@ -680,6 +674,7 @@ def main():
     intents = discord.Intents.default()
     intents.members = True
     intents.presences = True
+    intents.message_content = True
     client = SeanceClient(options.ref_user_id, pattern, options.prefix,
         sdnotify=options.systemd_notify,
         dm_guild_id=options.dm_server_id,
