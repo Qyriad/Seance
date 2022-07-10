@@ -4,23 +4,20 @@ that the bot receives and for the bot to send. """
 import re
 import sys
 import time
-import logging
 import sqlite3
-import traceback
 from datetime import datetime, timedelta
 
 import discord
+import discord.abc
 import discord.utils
+import discord.errors
+import discord.app_commands
 from discord import User, Message, TextChannel, DMChannel, ChannelType, Guild
 from discord.abc import Messageable
 from discord.errors import HTTPException
-import discord_slash
-from discord_slash.utils.manage_commands import create_option
-from discord_slash.model import SlashCommandOptionType
-from discord_slash.context import SlashContext
-# HACK: importing discord_slash overrides some stuff in discord.py,
-# and some of those overrides are broken. So...
-discord.utils.to_json = discord.utils._to_json
+
+from discord import Interaction
+from discord.app_commands import CommandTree
 
 from ..errors import SeanceError
 
@@ -80,14 +77,7 @@ class DiscordDMGuildManager:
         """
 
         self.client = client
-
-        # HACK: silence a warning from discord_slash about using a discord.Client instead of a commands.Bot.
-        discord_slash_logger = logging.getLogger('discord_slash')
-        original_level = discord_slash_logger.getEffectiveLevel()
-        discord_slash_logger.setLevel('ERROR')
-        self.slash = discord_slash.SlashCommand(self.client, sync_commands=True, delete_from_unused_guilds=True)
-        discord_slash_logger.setLevel(original_level)
-
+        self.command_tree = CommandTree(self.client)
         self.guild = guild
         self.proxy_untagged = proxy_untagged
 
@@ -203,19 +193,23 @@ class DiscordDMGuildManager:
             return None
 
 
-    async def handle_newdm_command(self, ctx: SlashContext, account):
+    @discord.app_commands.describe(account='Snowflake ID or @mention of account to DM')
+    async def handle_newdm_command(self, interaction: Interaction, account: str):
 
         # Ensure only one user was specified and nothing else, to avoid confusion.
-        users = get_nested(ctx.data, 'resolved', 'users')
+        users = get_nested(interaction.data, 'resolved', 'users') # type: ignore
         if users is not None:
             if len(users) > 1:
-                await ctx.send("❌ `account` option must specify only one user", hidden=True)
+                await interaction.response.send_message(
+                    "❌ `account` option must specify only one user",
+                    ephemeral=True
+                )
                 return
 
             matches = DISCORD_USER_MENTION_PATTERN.match(account)
             start, end = matches.span()
             if end - start != len(account):
-                await ctx.send("❌ `account` option must be a user ID or a mention and nothing else", hidden=True)
+                await interaction.response.send_message("❌ `account` option must be a user ID or a mention and nothing else", ephemeral=True)
                 return
 
             user = User(state=self.client._connection, data=list(users.values())[0])
@@ -224,30 +218,24 @@ class DiscordDMGuildManager:
             # Otherwise, a user was not mentioned. Try to parse the content as an ID instead.
             try:
                 user_id = int(account)
-            except ValueError:
-                await ctx.send("❌ `account` option must be a valid user ID or a mention", hidden=True)
+                user = await self.client.fetch_user(user_id)
+            except (ValueError, discord.errors.NotFound):
+                await interaction.response.send_message("❌ `account` option must be a valid user ID or a mention", ephemeral=True)
                 return
-
-            user = await self.client.fetch_user(user_id)
 
 
         channel = await self.ensure_channel_for(user)
-        await ctx.send("<#{}>".format(channel.id), hidden=True)
+        await interaction.response.send_message("<#{}>".format(channel.id), ephemeral=True)
 
 
     def register_slash_commands(self):
         """ Registers the slash commands that will be used for DM management. """
 
-        self.slash.add_slash_command(self.handle_newdm_command,
-            name="newdm", description="Opens a new DM", guild_ids=[self.guild.id], options=[
-                create_option(
-                    name='account',
-                    description='ID or mention of account to DM',
-                    option_type=SlashCommandOptionType.STRING,
-                    required=True,
-                ),
-            ]
-        )
+        self.handle_newdm_command = self.command_tree.command( # type: ignore
+            name="newdm",
+            description="Opens a new DM",
+            guild=self.guild,
+        )(self.handle_newdm_command)
 
 
     async def setup_channels(self):
@@ -287,6 +275,7 @@ class DiscordDMGuildManager:
     async def setup(self):
         await self.setup_channels()
         self.register_slash_commands()
+        await self.command_tree.sync(guild=self.guild)
 
 
     async def ensure_channel_for(self, user: User) -> TextChannel:
@@ -347,7 +336,7 @@ class DiscordDMGuildManager:
 
             dm = await self.ensure_dm_for(channel)
             if dm is not None:
-                await dm.trigger_typing()
+                await dm.typing()
 
             return
 
