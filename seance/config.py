@@ -212,4 +212,7 @@ class ConfigHandler:
         if missing_option_names:
             self.argparser.error('the following options are required: {}'.format(', '.join(missing_option_names)))
 
-        return argparse.Namespace(**self.option_values_by_argparse_name)
+        namespace = argparse.Namespace(**self.option_values_by_argparse_name)
+        namespace.argparser = self.argparser
+
+        return namespace
