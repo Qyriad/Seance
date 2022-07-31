@@ -25,7 +25,7 @@ ref user id = 188344527881400991
 ref-user-id = 188344527881400991
 ```
 
-Specify the config file to use on the command-line with `--config /path/to/file` (this is the one option that cannot itself be passed in a config file 😉).
+Specify the config file to use on the command-line with `--config /path/to/file` (this is the one option that cannot itself be passed in a config file 😉). Options specified on the command line override options specified in a configuration file.
 
 An example configuration file (which is functionally identical to the `seance-discord` CLI example invocation above) can be found in [contrib/](contrib/seance.ini).
 
