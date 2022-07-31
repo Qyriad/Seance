@@ -125,7 +125,7 @@ class ConfigHandler:
             option_dict = asdict(option)
 
             # And again add the parts that aren't None.
-            for kw in ['metavar', 'default', 'help']:
+            for kw in ['metavar', 'help']:
                 if option_dict[kw] is not None:
                     add_argument_kwargs[kw] = option_dict[kw]
 
@@ -164,12 +164,11 @@ class ConfigHandler:
             section = self.configparser[section_name]
 
 
-
         for option in self.options:
 
             option_init = option.type
 
-            cmdline_val = getattr(cmdline_args, option._argparse_name, None)
+            cmdline_val = getattr(cmdline_args, option._argparse_name, option.default)
             if cmdline_val is not None:
                 self._set_value_for(option, option_init(cmdline_val))
                 continue
@@ -194,13 +193,11 @@ class ConfigHandler:
                         self._set_value_for(option, option_init(config_val))
 
                     continue
-            else:
-                print("No config!")
 
             # If we've reached this point, then the option hasn't been specified anywhere.
-            # Set its value to None.
+            # Set its value to the specified default value.
             # self.option_values[option.name.lower()] = None
-            self._set_value_for(option, None)
+            self._set_value_for(option, option.default)
 
 
         # Now that we've gathered every option from every source, it's time to
