@@ -35,7 +35,8 @@ Once started, the bot also accepts a few chat commands:
 - `!edit [reply|link] <new content>` — takes a reply or a link to a message, and the new message content
 - `!s/pattern/replacement` — takes a reply, and a sed-style substitution command to edit a message
 - `!status [playing | streaming | listening to | watching | competing in] <status>` — sets the bot's status ("playing" is the default if not specified)
-- `!presence [invisible|dnd|idle|online|sync]` — sets the bots presence to the specified value, or sets it to synchronize it to the reference user
+- `!presence [invisible|dnd|idle|online|sync]` — sets the bot's presence to the specified value, or sets it to synchronize it to the reference user
+- `!nick [nickname]` — sets the bot's nickname
 
 The Séance CLI also takes an optional argument `--prefix`, which is an additional prefix to accept commands with. This is intended for cases where a single Discord user has more than one associated Séance bot, in order to be able to direct commands to a particular instance. For example, passing `--prefix b` allows you to run the chat command `b!status` to set the status for that specific instance of Séance.
 

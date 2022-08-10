@@ -85,6 +85,7 @@ class SeanceClient(discord.Client):
             '!edit': self.handle_edit_command,
             '!status': self.handle_status_command,
             '!presence': self.handle_presence_command,
+            '!nick': self.handle_nickname_command,
         }
 
         self.shortcut_handlers = {
@@ -438,6 +439,25 @@ class SeanceClient(discord.Client):
             await message.delete()
         except HTTPException as e:
             print(f"Failed to delete command message: {e}.", sys.stderr)
+
+    async def handle_nickname_command(self, message: Message):
+        """ !nick [nickname] -- sets the bot user's nickname. """
+
+        # Get the arguments to the command.
+        _command, *args = message.content.split(' ')
+        nickname = ' '.join(args)
+
+        try:
+            await message.guild.me.edit(nick=nickname)
+        except HTTPException as e:
+            print(f"Could not apply nickname update: {e}.", file=sys.stderr)
+            return
+
+        # Delete the original message.
+        try:
+            await message.delete()
+        except HTTPException as e:
+            print(f"Failed to delete messsage: {e}.", file=sys.stderr)
 
 
     async def handle_simple_reaction(self, message: Message, content: str):
