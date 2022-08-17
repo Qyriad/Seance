@@ -351,7 +351,7 @@ class DiscordDMGuildManager:
             webhook = await target_channel.create_webhook(name=self.client.user.display_name)
 
         # TODO: Handle replies.
-        files = [await att.to_file() for att in message.attachments]
+        files = [await att.to_file(spoiler=att.is_spoiler()) for att in message.attachments]
         server_message = await webhook.send(message.content, wait=True,
             username=message.author.name, avatar_url=message.author.display_avatar.url, files=files,
         )
@@ -393,7 +393,7 @@ class DiscordDMGuildManager:
 
 
         # TODO: Handle replies.
-        files = [await att.to_file() for att in message.attachments]
+        files = [await att.to_file(spoiler=att.is_spoiler()) for att in message.attachments]
         server_message = await message.channel.send(content_to_proxy, files=files)
         try:
             await message.delete()

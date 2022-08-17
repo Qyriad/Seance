@@ -272,7 +272,7 @@ class SeanceClient(discord.Client):
         """ Sends a new message based on the metadata of the original, but with the modified content. """
 
         # Copy over any attachments, and copy the inline reply if any.
-        files = [await att.to_file() for att in message.attachments]
+        files = [await att.to_file(spoiler=att.is_spoiler()) for att in message.attachments]
         ref = message.reference
         mention_flag = True
         if ref is not None:
