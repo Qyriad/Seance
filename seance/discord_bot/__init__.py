@@ -83,6 +83,7 @@ class SeanceClient(discord.Client):
         self.command_handlers = {
             '!s/': self.handle_substitute_command,
             '!edit': self.handle_edit_command,
+            '!delete': self.handle_delete_command,
             '!status': self.handle_status_command,
             '!presence': self.handle_presence_command,
             '!nick': self.handle_nickname_command,
@@ -354,6 +355,29 @@ class SeanceClient(discord.Client):
             await target.edit(content=new_content)
         except HTTPException as e:
             print(f"Failed to edit message: {e}\nNot deleting original message.", file=sys.stderr)
+            return
+
+        try:
+            await message.delete()
+        except HTTPException as e:
+            print(f"Failed to delete original message: {e}.", file=sys.stderr)
+
+
+    async def handle_delete_command(self, message: Message):
+        """ !delete -- delete a message"""
+
+        target, args = await self._get_target_message_and_args(message)
+
+        if target is None:
+            print("Delete requested but no proxied message found within 5 messages!", file=sys.stderr)
+            return
+
+        new_content = args
+
+        try:
+            await target.delete()
+        except HTTPException as e:
+            print(f"Failed to delete message: {e}\nNot deleting original message.", file=sys.stderr)
             return
 
         try:
