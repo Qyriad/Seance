@@ -1,9 +1,10 @@
 """ Handles unifying command line arguments, environment variables, and config file settings. """
 
 import os
+import builtins
 import argparse
 import configparser
-from typing import Union, Any
+from typing import Optional, Any
 from dataclasses import dataclass, field, asdict
 
 @dataclass
@@ -26,21 +27,21 @@ class ConfigOption:
     """
 
     name: str
-    short: str = None
-    cmdline_name: str = None
+    short: Optional[str] = None
+    cmdline_name: Optional[str] = None
     _argparse_name: str = field(init=False)
-    env_name: str = None
+    env_name: Optional[str] = None
 
     required: bool = False
-    metavar: str = None
-    type: type = str
+    metavar: Optional[str] = None
+    type: builtins.type = str
 
     # It says Any but technically it should be the same type as `type`.
     default: Any = None
-    help: str = None
+    help: Optional[str] = None
 
     # Extra keyword arguments to pass to argparse's `add_argument()` method.
-    argparse_add_kwargs: list = field(default_factory=dict)
+    argparse_add_kwargs: dict = field(default_factory=dict)
 
 
     def __post_init__(self):
@@ -75,9 +76,6 @@ class ConfigHandler:
         self.option_values_by_env_name[option.env_name] = value
         self.option_values_by_argparse_name[option._argparse_name] = value
 
-        # for key in [option.name, option.env_name, option._argparse_name]:
-            # self.option_values[key] = value
-
 
     def __init__(self, options: list[ConfigOption], *, env_var_prefix='', config_section,
             argparse_init_kwargs=None, argparser_class=argparse.ArgumentParser,
@@ -101,7 +99,6 @@ class ConfigHandler:
         self.configparser.optionxform = self._configparser_optionxform
 
         # Dictionary of option names to their values.
-        # self.option_values = {}
         self.option_values_by_name = {}
         self.option_values_by_env_name = {}
         self.option_values_by_argparse_name = {}
@@ -143,7 +140,7 @@ class ConfigHandler:
             );
 
 
-    def parse_all_sources(self) -> dict:
+    def parse_all_sources(self) -> argparse.Namespace:
 
         # Priority: command-line arguments > environment variables > config file.
 
@@ -176,7 +173,6 @@ class ConfigHandler:
             env_name = f'{self.env_var_prefix}{option.env_name}'
             env_val = os.getenv(env_name)
             if env_val is not None:
-                # self.option_values[option.name] = option_init(env_val)
                 self._set_value_for(option, option_init(env_val))
                 continue
 
@@ -186,17 +182,14 @@ class ConfigHandler:
 
                     # Config files handle bools specially.
                     if option.type == bool:
-                        # self.option_values[option.name] = section.getboolean(option.name)
                         self._set_value_for(option, section.getboolean(option.name))
                     else:
-                        # self.option_values[option.name] = option_init(config_val)
                         self._set_value_for(option, option_init(config_val))
 
                     continue
 
             # If we've reached this point, then the option hasn't been specified anywhere.
             # Set its value to the specified default value.
-            # self.option_values[option.name.lower()] = None
             self._set_value_for(option, option.default)
 
 
@@ -206,7 +199,8 @@ class ConfigHandler:
         missing_option_names = []
         for option in self.options:
             if option.required:
-                if option._argparse_name not in self.option_values_by_argparse_name:
+                # None is equivalent to "not supplied".
+                if self.option_values_by_argparse_name[option._argparse_name] is None:
                     missing_option_names.append(option.name)
 
         if missing_option_names:
