@@ -44,6 +44,16 @@ DISCORD_STATUS_PATTERN = re.compile(r'(?P<type>playing|streaming|listening to|wa
 # A pattern for matching the reaction add (and remove) shortcuts in the standard client.
 DISCORD_REACTION_SHORTCUT_PATTERN = re.compile(r'(?P<action>[+-])\<a?:\w{2,}:(?P<id>\d+)\>')
 
+# For processing startup commands
+class MockMessage:
+    content = ""
+
+    def __init__(self, content):
+        self.content = content
+
+    async def delete(self):
+        pass
+
 
 class KeepCurrentSentinel:
     """ A sentinal type used just for SeanceClient._set_presence(). """
@@ -56,7 +66,8 @@ def running_in_systemd() -> bool:
 
 class SeanceClient(discord.Client):
 
-    def __init__(self, ref_user_id, pattern, command_prefix, *args, dm_guild_id=None, dm_manager_options=None, sdnotify=False, **kwargs):
+    def __init__(self, ref_user_id, pattern, command_prefix, *args, dm_guild_id=None, dm_manager_options=None,
+                 sdnotify=False, default_status=False, default_presence=False, **kwargs):
 
         self.ref_user_id = ref_user_id
 
@@ -69,6 +80,8 @@ class SeanceClient(discord.Client):
         self.command_prefix = command_prefix
         self.dm_guild_id = dm_guild_id
         self.sdnotify = sdnotify
+        self.default_status = default_status
+        self.default_presence = default_presence
 
         super().__init__(*args, enable_debug_events=True, **kwargs)
 
@@ -547,6 +560,16 @@ class SeanceClient(discord.Client):
             notifer = sdnotify.SystemdNotifier(debug=True)
             notifer.notify("READY=1")
 
+        if self.default_status:
+            mockMessage = MockMessage(f'!status {self.default_status}')
+            print("Executing startup command {}".format(mockMessage.content))
+            await self.handle_status_command(mockMessage)
+
+        if self.default_presence:
+            mockMessage  = MockMessage(f'!presence {self.default_presence}')
+            print("Executing startup command {}".format(mockMessage.content))
+            await self.handle_presence_command(mockMessage)
+
 
     async def on_typing(self, channel, user, when):
 
@@ -673,6 +696,12 @@ def main():
         ConfigOption(name='prefix', required=False, default='',
             help="An additional prefix to accept commands with.",
         ),
+        ConfigOption(name='default status', required=False, default=None,
+            help="The status to set upon startup",
+        ),
+        ConfigOption(name='default presence', required=False, default=None,
+            help="The presence to set upon startup",
+        ),
         ConfigOption(name='DM server ID', required=False, default=None, metavar='ID', type=int,
             help="The guild to use as the DM server. Not passing this disables DM mode.",
         ),
@@ -732,6 +761,8 @@ def main():
         sdnotify=options.systemd_notify,
         dm_guild_id=options.dm_server_id,
         dm_manager_options=dict(proxy_untagged=options.dm_proxy_untagged),
+        default_status = options.default_status,
+        default_presence = options.default_presence,
         intents=intents,
     )
     print("Starting Séance Discord bot.")
