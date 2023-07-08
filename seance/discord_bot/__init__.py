@@ -57,7 +57,7 @@ def running_in_systemd() -> bool:
 class SeanceClient(discord.Client):
 
     def __init__(self, ref_user_id, pattern, command_prefix, *args, dm_guild_id=None, dm_manager_options=None,
-        sdnotify=False, default_status=False, default_presence=False, **kwargs
+        sdnotify=False, default_status=False, default_presence=False, forward_pings=None, **kwargs
     ):
 
         self.ref_user_id = ref_user_id
@@ -73,6 +73,7 @@ class SeanceClient(discord.Client):
         self.sdnotify = sdnotify
         self.default_status = default_status
         self.default_presence = default_presence
+        self.forward_pings = forward_pings
 
         super().__init__(*args, enable_debug_events=True, **kwargs)
 
@@ -565,6 +566,18 @@ class SeanceClient(discord.Client):
     async def handle_newdm_command(self, accountish):
         print("account: {}".format(accountish))
 
+    async def handle_ping(self, message):
+        # cannot do this until upgrade to 2.2
+        # silent = message.flags.silent
+
+        author = message.author
+        guild_name = message.guild.name
+        channel_name = message.channel.name
+        message_url = message.jump_url
+
+        ref_user = self.get_user(self.ref_user_id)
+        await ref_user.send(f"You have been pinged by {author.display_name} in ***{guild_name}*** \#{channel_name}: {message_url}")
+
     #
     # discord.py event handler overrides.
     #
@@ -613,6 +626,17 @@ class SeanceClient(discord.Client):
 
             if isinstance(message.channel, discord.DMChannel) and message.author.id != self.user.id:
                 await self.dm_guild_manager.handle_dm_to_server(message)
+                return
+
+        if self.forward_pings:
+            # If the message messages this bot, does not message the reference account,
+            # and the author is not this bot, forward the ping
+            self_mention = next( (user for user in message.mentions if user.id == self.user.id), None)
+            user_mention = next( (user for user in message.mentions if user.id == self.ref_user_id), None)
+            is_ref_user = message.author.id == self.ref_user_id
+            is_self = message.author.id == self.user.id
+            if self_mention is not None and user_mention is None and not is_self and not is_ref_user:
+                await self.handle_ping(message)
                 return
 
 
@@ -732,6 +756,9 @@ def main():
         ConfigOption(name='DM proxy untagged', required=False, default=None, type=bool,
             help="When using DM mode, proxy untagged messages in the DM server.",
         ),
+        ConfigOption(name='Forward pings', required=False, default=False, type=bool,
+            help="Whether to message the proxied user upon the bot getting pinged",
+        ),
     ]
 
     sdnotify_available = 'sdnotify' in sys.modules
@@ -787,6 +814,7 @@ def main():
         dm_manager_options=dict(proxy_untagged=options.dm_proxy_untagged),
         default_status = options.default_status,
         default_presence = options.default_presence,
+        forward_pings=options.forward_pings,
         intents=intents,
     )
     print("Starting Séance Discord bot.")
