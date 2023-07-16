@@ -7,7 +7,7 @@ import json
 import asyncio
 import argparse
 from io import StringIO
-from typing import Union
+from typing import Union, Optional
 
 import discord
 from discord import Message, Member, Status, ChannelType
@@ -269,6 +269,33 @@ class SeanceClient(discord.Client):
                 print(f"Failed to handle reaction: {e}\nNot deleting original message.", file=sys.stderr)
 
     @staticmethod
+    def _parse_activity_spec(spec: str) -> Optional[Activity]:
+        """
+        Accepts a string describing a Discord activity for the !status command, and returns
+        the discord.py Activity object it corresponds to, or None if `spec` doesn't match
+        an activity format.
+        """
+
+        matches = re.match(DISCORD_STATUS_PATTERN, spec)
+        if matches:
+            activity_type = matches.group("type")
+            if activity_type:
+                # Discord.py's names for these don't include the second word for "listening to"
+                # or "competing in", and are only in lowercase.
+                activity_type = activity_type.split()[0].lower()
+            else:
+                # If not specified, default to "Playing".
+                activity_type = "playing"
+
+            name = matches.group("name")
+
+            new_activity = Activity(type=ActivityType[activity_type], name=name)
+
+            return new_activity
+
+        return None
+
+    @staticmethod
     async def proxy(message: Message, new_content: str):
         """ Sends a new message based on the metadata of the original, but with the modified content. """
 
@@ -434,31 +461,13 @@ class SeanceClient(discord.Client):
         _command, *args = message.content.split(' ')
         args = ' '.join(args)
 
-        matches = re.match(DISCORD_STATUS_PATTERN, args)
+        # Parse out what activity this command is describing.
+        new_activity = self._parse_activity_spec(args)
 
-        if matches:
+        # And then ask Discord to set it.
+        await self._set_presence(activity=new_activity)
 
-            activity_type = matches.group('type')
-            if activity_type:
-                # Discord.py's names for these don't include the second word for "listening to" or "competing in",
-                # and are only in lowercase.
-                activity_type = matches.group('type').split()[0].lower()
-            else:
-                # If not specified, default to 'Playing'.
-                activity_type = 'playing'
-
-            name = matches.group('name')
-
-            new_activity = Activity(type=ActivityType[activity_type], name=name)
-
-            # Set the new activity.
-            await self._set_presence(activity=new_activity)
-
-        else:
-            # If it didn't match, clear the status.
-            await self._set_presence(activity=None)
-
-        # And delete the command message.
+        # And finally delete the command message.
         try:
             await message.delete()
         except HTTPException as e:
