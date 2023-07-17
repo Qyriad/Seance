@@ -44,16 +44,6 @@ DISCORD_STATUS_PATTERN = re.compile(r'(?P<type>playing|streaming|listening to|wa
 # A pattern for matching the reaction add (and remove) shortcuts in the standard client.
 DISCORD_REACTION_SHORTCUT_PATTERN = re.compile(r'(?P<action>[+-])\<a?:\w{2,}:(?P<id>\d+)\>')
 
-# For processing startup commands
-class MockMessage:
-    content = ""
-
-    def __init__(self, content):
-        self.content = content
-
-    async def delete(self):
-        pass
-
 
 class KeepCurrentSentinel:
     """ A sentinal type used just for SeanceClient._set_presence(). """
@@ -67,7 +57,8 @@ def running_in_systemd() -> bool:
 class SeanceClient(discord.Client):
 
     def __init__(self, ref_user_id, pattern, command_prefix, *args, dm_guild_id=None, dm_manager_options=None,
-                 sdnotify=False, default_status=False, default_presence=False, **kwargs):
+                 sdnotify=False, default_status=False, default_presence=False, **kwargs
+    ):
 
         self.ref_user_id = ref_user_id
 
@@ -467,6 +458,40 @@ class SeanceClient(discord.Client):
             print(f"Failed to delete messsage: {e}.", file=sys.stderr)
 
 
+    async def handle_startup_presence(self):
+        applied_presence = None
+
+        # If sync then look up current reference user presence
+        if self.default_presence == 'sync':
+            ref_user = self.get_user(self.ref_user_id)
+            mutual_guilds = ref_user.mutual_guilds
+
+            if len(mutual_guilds) < 1:
+                print("Failed to sync to user's presence: could not find shared guild", file=sys.stderr)
+                return
+
+            ref_user_member = await mutual_guilds[0].fetch_member(self.ref_user_id)
+            applied_presence = ref_user_member.status if ref_user_member.status != Status.offline else Status.invisible
+
+            self._status_override = None
+            self._cached_status = applied_presence
+
+        # Otherwise, set the override.
+        else:
+            # Try to grab the relevant presence.
+            try:
+                self._status_override = Status[self.default_presence]
+                applied_presence = self._status_override
+            except KeyError:
+                print(f"Could not apply unknown presence {presence}.", file=sys.stderr)
+
+        # Attempt to apply whichever presence we determined
+        try:
+            await self._set_presence(status=applied_presence)
+        except HTTPException as e:
+            print(f"Failed to apply presence: {e}.", file=sys.stderr)
+
+
     async def handle_status_command(self, message: Message):
         """ !status [status] -- sets the bot user's status. """
 
@@ -561,14 +586,13 @@ class SeanceClient(discord.Client):
             notifer.notify("READY=1")
 
         if self.default_status:
-            mockMessage = MockMessage(f'!status {self.default_status}')
-            print("Executing startup command {}".format(mockMessage.content))
-            await self.handle_status_command(mockMessage)
+            print("Setting startup status {}".format(self.default_status))
+            default_activity = self._parse_activity_spec(self.default_status)
+            await self._set_presence(activity=default_activity)
 
         if self.default_presence:
-            mockMessage  = MockMessage(f'!presence {self.default_presence}')
-            print("Executing startup command {}".format(mockMessage.content))
-            await self.handle_presence_command(mockMessage)
+            print("Setting startup presence {}".format(self.default_presence))
+            await self.handle_startup_presence()
 
 
     async def on_typing(self, channel, user, when):
