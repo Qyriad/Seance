@@ -57,7 +57,7 @@ def running_in_systemd() -> bool:
 class SeanceClient(discord.Client):
 
     def __init__(self, ref_user_id, pattern, command_prefix, *args, dm_guild_id=None, dm_manager_options=None,
-                 sdnotify=False, default_status=False, default_presence=False, **kwargs
+        sdnotify=False, default_status=False, default_presence=False, **kwargs
     ):
 
         self.ref_user_id = ref_user_id
@@ -466,7 +466,7 @@ class SeanceClient(discord.Client):
             ref_user = self.get_user(self.ref_user_id)
             mutual_guilds = ref_user.mutual_guilds
 
-            if len(mutual_guilds) < 1:
+            if not mutual_guilds:
                 print("Failed to sync to user's presence: could not find shared guild", file=sys.stderr)
                 return
 
