@@ -56,7 +56,9 @@ def running_in_systemd() -> bool:
 
 class SeanceClient(discord.Client):
 
-    def __init__(self, ref_user_id, pattern, command_prefix, *args, dm_guild_id=None, dm_manager_options=None, sdnotify=False, **kwargs):
+    def __init__(self, ref_user_id, pattern, command_prefix, *args, dm_guild_id=None, dm_manager_options=None,
+        sdnotify=False, default_status=False, default_presence=False, **kwargs
+    ):
 
         self.ref_user_id = ref_user_id
 
@@ -69,6 +71,8 @@ class SeanceClient(discord.Client):
         self.command_prefix = command_prefix
         self.dm_guild_id = dm_guild_id
         self.sdnotify = sdnotify
+        self.default_status = default_status
+        self.default_presence = default_presence
 
         super().__init__(*args, enable_debug_events=True, **kwargs)
 
@@ -454,6 +458,40 @@ class SeanceClient(discord.Client):
             print(f"Failed to delete messsage: {e}.", file=sys.stderr)
 
 
+    async def handle_startup_presence(self):
+        applied_presence = None
+
+        # If sync then look up current reference user presence
+        if self.default_presence == 'sync':
+            ref_user = self.get_user(self.ref_user_id)
+            mutual_guilds = ref_user.mutual_guilds
+
+            if not mutual_guilds:
+                print("Failed to sync to user's presence: could not find shared guild", file=sys.stderr)
+                return
+
+            ref_user_member = await mutual_guilds[0].fetch_member(self.ref_user_id)
+            applied_presence = ref_user_member.status if ref_user_member.status != Status.offline else Status.invisible
+
+            self._status_override = None
+            self._cached_status = applied_presence
+
+        # Otherwise, set the override.
+        else:
+            # Try to grab the relevant presence.
+            try:
+                self._status_override = Status[self.default_presence]
+                applied_presence = self._status_override
+            except KeyError:
+                print(f"Could not apply unknown presence {presence}.", file=sys.stderr)
+
+        # Attempt to apply whichever presence we determined
+        try:
+            await self._set_presence(status=applied_presence)
+        except HTTPException as e:
+            print(f"Failed to apply presence: {e}.", file=sys.stderr)
+
+
     async def handle_status_command(self, message: Message):
         """ !status [status] -- sets the bot user's status. """
 
@@ -546,6 +584,15 @@ class SeanceClient(discord.Client):
             # Tell systemd we've started up.
             notifer = sdnotify.SystemdNotifier(debug=True)
             notifer.notify("READY=1")
+
+        if self.default_status:
+            print("Setting startup status {}".format(self.default_status))
+            default_activity = self._parse_activity_spec(self.default_status)
+            await self._set_presence(activity=default_activity)
+
+        if self.default_presence:
+            print("Setting startup presence {}".format(self.default_presence))
+            await self.handle_startup_presence()
 
 
     async def on_typing(self, channel, user, when):
@@ -673,6 +720,12 @@ def main():
         ConfigOption(name='prefix', required=False, default='',
             help="An additional prefix to accept commands with.",
         ),
+        ConfigOption(name='default status', required=False, default=None,
+            help="The status to set upon startup",
+        ),
+        ConfigOption(name='default presence', required=False, default=None,
+            help="The presence to set upon startup",
+        ),
         ConfigOption(name='DM server ID', required=False, default=None, metavar='ID', type=int,
             help="The guild to use as the DM server. Not passing this disables DM mode.",
         ),
@@ -732,6 +785,8 @@ def main():
         sdnotify=options.systemd_notify,
         dm_guild_id=options.dm_server_id,
         dm_manager_options=dict(proxy_untagged=options.dm_proxy_untagged),
+        default_status = options.default_status,
+        default_presence = options.default_presence,
         intents=intents,
     )
     print("Starting Séance Discord bot.")
