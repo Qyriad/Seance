@@ -629,7 +629,7 @@ class SeanceClient(discord.Client):
                 return
 
         if self.forward_pings:
-            # If the message messages this bot, does not message the reference account,
+            # If the message mentions this bot, does not mention the reference account,
             # and the author is not this bot, forward the ping
             self_mention = next( (user for user in message.mentions if user.id == self.user.id), None)
             user_mention = next( (user for user in message.mentions if user.id == self.ref_user_id), None)
