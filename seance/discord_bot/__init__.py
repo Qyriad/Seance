@@ -567,16 +567,17 @@ class SeanceClient(discord.Client):
         print("account: {}".format(accountish))
 
     async def handle_ping(self, message):
-        # cannot do this until upgrade to 2.2
-        # silent = message.flags.silent
-
         author = message.author
         guild_name = message.guild.name
         channel_name = message.channel.name
         message_url = message.jump_url
+        silent = message.flags.silent
 
         ref_user = self.get_user(self.ref_user_id)
-        await ref_user.send(f"You have been pinged by {author.display_name} in ***{guild_name}*** \#{channel_name}: {message_url}")
+        await ref_user.send(
+            f"You have been pinged by {author.display_name} in ***{guild_name}*** \#{channel_name}: {message_url}",
+            silent=silent
+        )
 
     #
     # discord.py event handler overrides.
