@@ -77,6 +77,9 @@ class SeanceClient(discord.Client):
 
         super().__init__(*args, enable_debug_events=True, **kwargs)
 
+        # self.ref_user() will populate this when it's accessed.
+        self._ref_user = None
+
         # Store any status overrides present.
         self._status_override = None
         self._cached_status = Status.online
@@ -145,6 +148,15 @@ class SeanceClient(discord.Client):
         to re-fetch the message.  """
 
         return await message.channel.fetch_message(message.id)
+
+    def ref_user(self) -> discord.User:
+        """ discord.User object corresponding to ref_user_id; populated on first use. """
+
+        if self._ref_user is not None:
+            return self._ref_user
+
+        self._ref_user = self.get_user(self.ref_user_id)
+        return self._ref_user
 
 
     async def _get_shortcut_target(self, message: Message):
@@ -464,8 +476,7 @@ class SeanceClient(discord.Client):
 
         # If sync then look up current reference user presence
         if self.default_presence == 'sync':
-            ref_user = self.get_user(self.ref_user_id)
-            mutual_guilds = ref_user.mutual_guilds
+            mutual_guilds = self.ref_user().mutual_guilds
 
             if not mutual_guilds:
                 print("Failed to sync to user's presence: could not find shared guild", file=sys.stderr)
@@ -573,9 +584,8 @@ class SeanceClient(discord.Client):
         message_url = message.jump_url
         silent = message.flags.silent
 
-        ref_user = self.get_user(self.ref_user_id)
-        await ref_user.send(
-            f"You have been pinged by {author.display_name} in ***{guild_name}*** \#{channel_name}: {message_url}",
+        await self.ref_user().send(
+            f"You have been pinged by {author.display_name} in ***{guild_name}*** #{channel_name}: {message_url}",
             silent=silent
         )
 
@@ -630,13 +640,17 @@ class SeanceClient(discord.Client):
                 return
 
         if self.forward_pings:
-            # If the message mentions this bot, does not mention the reference account,
-            # and the author is not this bot, forward the ping
-            self_mention = next( (user for user in message.mentions if user.id == self.user.id), None)
-            user_mention = next( (user for user in message.mentions if user.id == self.ref_user_id), None)
-            is_ref_user = message.author.id == self.ref_user_id
-            is_self = message.author.id == self.user.id
-            if self_mention is not None and user_mention is None and not is_self and not is_ref_user:
+
+            # If the message mentions this bot, does not already mention the reference account,
+            # and the author is not this bot or the reference account, forward the ping.
+
+            mentions_this_bot = self.user.mentioned_in(message)
+            mentions_ref_user = self.ref_user().mentioned_in(message)
+
+            by_this_bot = message.author.id == self.ref_user_id
+            by_ref_user = message.author.id == self.user.id
+
+            if mentions_this_bot and not mentions_ref_user and not by_this_bot and not by_ref_user:
                 await self.handle_ping(message)
                 return
 
