@@ -57,7 +57,7 @@ def running_in_systemd() -> bool:
 class SeanceClient(discord.Client):
 
     def __init__(self, ref_user_id, pattern, command_prefix, *args, dm_guild_id=None, dm_manager_options=None,
-        sdnotify=False, default_status=False, default_presence=False, **kwargs
+        sdnotify=False, default_status=False, default_presence=False, forward_pings=None, **kwargs
     ):
 
         self.ref_user_id = ref_user_id
@@ -73,8 +73,12 @@ class SeanceClient(discord.Client):
         self.sdnotify = sdnotify
         self.default_status = default_status
         self.default_presence = default_presence
+        self.forward_pings = forward_pings
 
         super().__init__(*args, enable_debug_events=True, **kwargs)
+
+        # self.ref_user() will populate this when it's accessed.
+        self._ref_user = None
 
         # Store any status overrides present.
         self._status_override = None
@@ -144,6 +148,15 @@ class SeanceClient(discord.Client):
         to re-fetch the message.  """
 
         return await message.channel.fetch_message(message.id)
+
+    def ref_user(self) -> discord.User:
+        """ discord.User object corresponding to ref_user_id; populated on first use. """
+
+        if self._ref_user is not None:
+            return self._ref_user
+
+        self._ref_user = self.get_user(self.ref_user_id)
+        return self._ref_user
 
 
     async def _get_shortcut_target(self, message: Message):
@@ -463,8 +476,7 @@ class SeanceClient(discord.Client):
 
         # If sync then look up current reference user presence
         if self.default_presence == 'sync':
-            ref_user = self.get_user(self.ref_user_id)
-            mutual_guilds = ref_user.mutual_guilds
+            mutual_guilds = self.ref_user().mutual_guilds
 
             if not mutual_guilds:
                 print("Failed to sync to user's presence: could not find shared guild", file=sys.stderr)
@@ -565,6 +577,18 @@ class SeanceClient(discord.Client):
     async def handle_newdm_command(self, accountish):
         print("account: {}".format(accountish))
 
+    async def handle_ping(self, message):
+        author = message.author
+        guild_name = message.guild.name
+        channel_name = message.channel.name
+        message_url = message.jump_url
+        silent = message.flags.silent
+
+        await self.ref_user().send(
+            f"You have been pinged by {author.display_name} in ***{guild_name}*** #{channel_name}: {message_url}",
+            silent=silent
+        )
+
     #
     # discord.py event handler overrides.
     #
@@ -613,6 +637,21 @@ class SeanceClient(discord.Client):
 
             if isinstance(message.channel, discord.DMChannel) and message.author.id != self.user.id:
                 await self.dm_guild_manager.handle_dm_to_server(message)
+                return
+
+        if self.forward_pings:
+
+            # If the message mentions this bot, does not already mention the reference account,
+            # and the author is not this bot or the reference account, forward the ping.
+
+            mentions_this_bot = self.user.mentioned_in(message)
+            mentions_ref_user = self.ref_user().mentioned_in(message)
+
+            by_this_bot = message.author.id == self.ref_user_id
+            by_ref_user = message.author.id == self.user.id
+
+            if mentions_this_bot and not mentions_ref_user and not by_this_bot and not by_ref_user:
+                await self.handle_ping(message)
                 return
 
 
@@ -732,6 +771,9 @@ def main():
         ConfigOption(name='DM proxy untagged', required=False, default=None, type=bool,
             help="When using DM mode, proxy untagged messages in the DM server.",
         ),
+        ConfigOption(name='Forward pings', required=False, default=False, type=bool,
+            help="Whether to message the proxied user upon the bot getting pinged",
+        ),
     ]
 
     sdnotify_available = 'sdnotify' in sys.modules
@@ -787,6 +829,7 @@ def main():
         dm_manager_options=dict(proxy_untagged=options.dm_proxy_untagged),
         default_status = options.default_status,
         default_presence = options.default_presence,
+        forward_pings=options.forward_pings,
         intents=intents,
     )
     print("Starting Séance Discord bot.")
