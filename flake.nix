@@ -9,9 +9,9 @@
 
       pkgs = import nixpkgs { inherit system; };
 
-        package = pkgs.callPackage ./package.nix {
-          python-sed = pkgs.callPackage ./nix/python-sed.nix { };
-        };
+      package = pkgs.callPackage ./package.nix {
+        python-sed = pkgs.callPackage ./nix/python-sed.nix { };
+      };
 
     in {
       packages.default = package;
