@@ -29,5 +29,9 @@
       };
 
     }) # eachDefaultSystem
+    // {
+      nixosModules.seance = import ./nix/module.nix self;
+      nixosModules.default = self.nixosModules.seance;
+    }
   ; # outputs
 }
