@@ -4,8 +4,8 @@
 #
 { pkgs, config, ... }:
 let
-  discordUserId     = 123456789012345678;
-  telegramUsername  = "username";
+  discordUserId     = 123456789123456789;
+  telegramUsername  = "telegramalice";
 
 in {
   # My secrets
