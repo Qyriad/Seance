@@ -50,6 +50,18 @@ Such a user can be created with `sudo useradd seance`. To avoid installing Séan
 
 To install seance and sdnotify for this user use `sudo -u seance pip3 install --user sdnotify git+https://github.com/Qyriad/Seance`.
 
+### Nix and NixOS
+
+Séance provides a Nix flake, this flake contains a package definition for Séance and a NixOS service module for
+configuring and running it.
+
+To use the module in your NixOS configuration:
+
+1. Add the Séance flake to your NixOS configuration: `seance.url = "github:Qyriad/Séance.git"`.
+2. Import the NixOS module somewhere in your configuration: `{ seance, ... }: { imports = [ seance.nixosModules.default ]; };`.
+3. Configure the services [see example](./contrib/example.nix).
+4. Rebuild your NixOS configuration.
+
 
 ### Discord DM Mode
 
