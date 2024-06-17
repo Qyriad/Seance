@@ -3,7 +3,7 @@
 #
 # vim: et:ts=2:sw=2:
 #
-self: { config, lib, pkgs , ... }:
+packages: { config, lib, pkgs , ... }:
 with lib;
 let
   cfg = config.services.seance;
@@ -222,7 +222,7 @@ in {
 
       package = mkOption {
         type = types.path;
-        default = self.packages.${pkgs.system}.default;
+        default = packages.${pkgs.system}.default;
         defaultText = "pkgs.seance";
         example = "pkgs.callPackage ./mySeance {}";
         description = ''
