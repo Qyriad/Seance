@@ -330,7 +330,10 @@ class SeanceClient(discord.Client):
         mention_flag = True
         if ref is not None:
             ref.fail_if_not_exists = False
-            if message.reference.resolved.author.id not in map(lambda x: x.id, message.mentions):
+            # Sometimes the API might not actually pass the resolved message, we refetch it anyway.
+            if ref.resolved is None:
+                ref.resolved = await message.channel.fetch_message(message.reference.message_id)
+            if ref.resolved.author.id not in map(lambda x: x.id, message.mentions):
                 mention_flag = False
 
         # Send the new message.
