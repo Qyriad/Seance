@@ -3,22 +3,17 @@
 import os
 import re
 import sys
-import json
-import asyncio
-import argparse
 from io import StringIO
 from typing import Union, Optional
 
 import discord
-from discord import Message, Member, Status, ChannelType
+from discord import Message, Member, PartialEmoji, Status, ChannelType
+from discord.raw_models import RawReactionActionEvent
 from discord import Emoji
-from discord.activity import Activity, ActivityType
+from discord.activity import Activity
+from discord.enums import ActivityType
 from discord.errors import HTTPException
 from discord.message import PartialMessage
-
-# import discord_slash
-# from discord_slash.utils.manage_commands import create_option
-# from discord_slash.model import SlashCommandOptionType
 
 import PythonSed
 from PythonSed import Sed
@@ -57,10 +52,12 @@ def running_in_systemd() -> bool:
 class SeanceClient(discord.Client):
 
     def __init__(self, ref_user_id, pattern, command_prefix, *args, dm_guild_id=None, dm_manager_options=None,
-        sdnotify=False, default_status=False, default_presence=False, forward_pings=None, **kwargs
+        sdnotify=False, default_status=False, default_presence=False, forward_pings=None, proxied_emoji=set(),
+        **kwargs
     ):
 
         self.ref_user_id = ref_user_id
+        self.proxied_emoji = proxied_emoji
 
         # If we weren't given an already compiled re.Pattern, compile it now.
         if not isinstance(pattern, re.Pattern):
@@ -744,6 +741,61 @@ class SeanceClient(discord.Client):
         self._cached_status = status
 
 
+    # Needs to be raw because message might not be in the message cache.
+    async def on_raw_reaction_add(self, payload: RawReactionActionEvent):
+
+        # Restrict to only reactions added by our reference user.
+        if payload.user_id != self.ref_user_id:
+            return
+
+        # Keep track of if this emoji matched our list of force proxied emoji.
+        # `*` is usable as a global "proxy any reactions by the reference user".
+        proxied = '*' in self.proxied_emoji
+
+        # We have to handle default Unicode emoji slightly differently than Discord emoji.
+        if payload.emoji.id is None:
+            # This is a Unicode emoji and the actual value is stored in name.
+            if payload.emoji.id in self.proxied_emoji:
+                proxied=True
+        else:
+            # This is a custom Discord emoji
+            if str(payload.emoji.id) in self.proxied_emoji:
+                proxied=True
+
+        # Don't do anything further if this reaction shouldn't be force proxied.
+        if not proxied:
+            return
+
+        # Try to add the given emoji and clear the other, if the add fails this will prevent clearing the existing
+        # reaction so you still get the reaction.
+        # NOTE: Due to a quirk of how Discord/discord.py works, if another user has already added a given emoji
+        # and that emoji is *still* on the given message when we add the reaction, we don't have to actually
+        # have that emoji ourselves, this means that force proxied emoji *always* work.
+        channel = self.get_channel(payload.channel_id)
+        message = channel.get_partial_message(payload.message_id)
+        try:
+            await message.add_reaction(payload.emoji)
+            await message.remove_reaction(payload.emoji, member=payload.member)
+        except HTTPException:
+            print('An error occurred while trying to reproxy a force proxied emoji', file=sys.stdout)
+
+
+def _split_proxied_emoji(s: str) -> set[str]:
+    """Split our list of proxied emoji and cleanup the result to produce a set of emoji IDs and Unicode emoji.."""
+
+    emoji = set()
+
+    # Split by non-alphanum and commas.
+    for item in re.split(r'\s+|,', s):
+        if not len(item):
+            # Skip blank entries.
+            continue
+
+        # Append to our set of items.
+        emoji.add(item)
+
+    return emoji
+
 def main():
 
     options = [
@@ -773,6 +825,9 @@ def main():
         ),
         ConfigOption(name='Forward pings', required=False, default=False, type=bool,
             help="Whether to message the proxied user upon the bot getting pinged",
+        ),
+        ConfigOption(name='proxied emoji', required=False, default=set(),
+            help="Comma separated list of emoji or emoji IDs to always proxy when used as a reaction by the reference user."
         ),
     ]
 
@@ -831,6 +886,7 @@ def main():
         default_presence = options.default_presence,
         forward_pings=options.forward_pings,
         intents=intents,
+        proxied_emoji=_split_proxied_emoji(options.proxied_emoji),
     )
     print("Starting Séance Discord bot.")
     client.run(options.token)
