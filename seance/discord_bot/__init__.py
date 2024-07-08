@@ -238,6 +238,8 @@ class SeanceClient(discord.Client):
                     async for msg in prev_messages:
                         if msg.author.id == self.user.id:
                             return msg, message.content[(message.content.find(command_terminator) + 1):]
+        # If nothing worked, return None, None.
+        return None, None
 
 
     async def _handle_content(self, message: Message, content: str):
@@ -371,7 +373,7 @@ class SeanceClient(discord.Client):
         try:
             await target.edit(content=new_content)
         except HTTPException as e:
-            print(f"Failed to edit message: {e}.\nNot deleting original message.")
+            print(f"Failed to edit message: {e}.\nNot deleting command message.")
             return
 
         # Delete the message that executed the command.
@@ -395,13 +397,13 @@ class SeanceClient(discord.Client):
         try:
             await target.edit(content=new_content)
         except HTTPException as e:
-            print(f"Failed to edit message: {e}\nNot deleting original message.", file=sys.stderr)
+            print(f"Failed to edit message: {e}\nNot deleting command message.", file=sys.stderr)
             return
 
         try:
             await message.delete()
         except HTTPException as e:
-            print(f"Failed to delete original message: {e}.", file=sys.stderr)
+            print(f"Failed to delete command message: {e}.", file=sys.stderr)
 
 
     async def handle_delete_command(self, message: Message):
@@ -418,13 +420,13 @@ class SeanceClient(discord.Client):
         try:
             await target.delete()
         except HTTPException as e:
-            print(f"Failed to delete message: {e}\nNot deleting original message.", file=sys.stderr)
+            print(f"Failed to delete targeted message: {e}\nNot deleting command message.", file=sys.stderr)
             return
 
         try:
             await message.delete()
         except HTTPException as e:
-            print(f"Failed to delete original message: {e}.", file=sys.stderr)
+            print(f"Failed to delete command message: {e}.", file=sys.stderr)
 
 
     async def handle_presence_command(self, message: Message):
@@ -826,8 +828,8 @@ def main():
         ConfigOption(name='Forward pings', required=False, default=False, type=bool,
             help="Whether to message the proxied user upon the bot getting pinged",
         ),
-        ConfigOption(name='proxied emoji', required=False, default=set(),
-            help="Comma separated list of emoji or emoji IDs to always proxy when used as a reaction by the reference user."
+        ConfigOption(name='proxied emoji', required=False, default='',
+            help="Comma or whitespace separated list of emoji or emoji IDs to always proxy when used as a reaction by the reference user."
         ),
     ]
 
