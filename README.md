@@ -26,6 +26,7 @@ These are the available configuration options, configured as described [below](#
 - `pattern` - The regular expression pattern used to match a message to be proxied. Must contain a group named `content` which should contain the message body that will be in the proxied message.
 - `prefix` - A prefix that can be used before a `!` command (such as `!edit`) to uniquely indicate that this instance of Séance should handle the command. Unprefixed commands are always accepted, even when this is set.
 - `proxied-emoji` - A whitespace or comma separated list of unicode emoji (`🤝`) and Discord custom emoji ID numbers that will *always* be reproxied by Séance when used as a reaction by the reference user. The reference user will *not* be able to react with this emoji themselves, it will always be removed.
+- `valid-reproxy-targets` — A list of Discord user IDs that are considered acceptable targets for the `!reproxy` command. **Warning**: It is *extremely* important that you double check this list, as Séance (unlike PluralKit or similar) has no way of knowing these IDs are your own Séance bots or even knowing if they're Séance instances at all. Be very careful with this. The reference user is always included regardless of what's configured here.
 
 - **TODO: DM Mode configuration**
 
@@ -54,6 +55,7 @@ Once started, the bot also accepts a few chat commands:
 - `!status [playing | streaming | listening to | watching | competing in] <status>` — sets the bot's status ("playing" is the default if not specified)
 - `!presence [invisible|dnd|idle|online|sync]` — sets the bot's presence to the specified value, or sets it to synchronize it to the reference user
 - `!nick [nickname]` — sets the bot's nickname
+- `<prefix>!reproxy` — reproxies a message to be from this bot, if a prefix is configured, it **must** be used to ensure collision safety against other instances of Séance. This is valid in conjunction with the `valid-reproxy-targets` option, which specifies valid user IDs to target. The reference user is always included on this list.
 
 The Séance CLI also takes an optional argument `--prefix`, which is an additional prefix to accept commands with. This is intended for cases where a single Discord user has more than one associated Séance bot, in order to be able to direct commands to a particular instance. For example, passing `--prefix b` allows you to run the chat command `b!status` to set the status for that specific instance of Séance.
 
