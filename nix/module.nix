@@ -57,7 +57,11 @@ let
 
       dmDatabaseDir = mkOption {
         type = types.str;
-        default = "/var/lib/seance";
+
+        # Default to not specifying one to allow configs which don't set this to work.
+        default = "";
+
+        example = "/var/lib/seance";
         description = ''
           The directory used to store a DM database, if one is around. Must be configured
           if more than one user is present on this machine with a DM server.
