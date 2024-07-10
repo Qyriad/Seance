@@ -787,7 +787,7 @@ def _split_proxied_emoji(s: str) -> set[str]:
 
     # Split by non-alphanum and commas.
     for item in re.split(r'\s+|,', s):
-        if not len(item):
+        if not item:
             # Skip blank entries.
             continue
 
