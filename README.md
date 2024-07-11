@@ -21,12 +21,13 @@ Note that the Discord bot also requires the Presence and Server Members Privileg
 These are the available configuration options, configured as described [below](#config-file).
 
 #### Discord
-- `token` - The Discord bot token used to authenticate, **important**: this must be kept secret as it allows anyone to control your bot account.
-- `ref-user-id` - The reference user's Discord ID. This is the user account allowed to proxy messages and execute Séance commands.
-- `pattern` - The regular expression pattern used to match a message to be proxied. Must contain a group named `content` which should contain the message body that will be in the proxied message.
-- `prefix` - A prefix that can be used before a `!` command (such as `!edit`) to uniquely indicate that this instance of Séance should handle the command. Unprefixed commands are always accepted, even when this is set.
-- `proxied-emoji` - A whitespace or comma separated list of unicode emoji (`🤝`) and Discord custom emoji ID numbers that will *always* be reproxied by Séance when used as a reaction by the reference user. The reference user will *not* be able to react with this emoji themselves, it will always be removed.
+- `token` — The Discord bot token used to authenticate, **important**: this must be kept secret as it allows anyone to control your bot account.
+- `ref-user-id` — The reference user's Discord ID. This is the user account allowed to proxy messages and execute Séance commands.
+- `pattern` — The regular expression pattern used to match a message to be proxied. Must contain a group named `content` which should contain the message body that will be in the proxied message.
+- `prefix` — A prefix that can be used before a `!` command (such as `!edit`) to uniquely indicate that this instance of Séance should handle the command. Unprefixed commands are always accepted, even when this is set.
+- `proxied-emoji` — A whitespace or comma separated list of unicode emoji (`🤝`) and Discord custom emoji ID numbers that will *always* be reproxied by Séance when used as a reaction by the reference user. The reference user will *not* be able to react with this emoji themselves, it will always be removed.
 - `valid-reproxy-targets` — A list of Discord user IDs that are considered acceptable targets for the `!reproxy` command. **Warning**: It is *extremely* important that you double check this list, as Séance (unlike PluralKit or similar) has no way of knowing these IDs are your own Séance bots or even knowing if they're Séance instances at all. Be very careful with this. The reference user is always included regardless of what's configured here.
+- `send-typing` — Send typing events corresponding to when our reference user is typing.
 
 - **TODO: DM Mode configuration**
 
