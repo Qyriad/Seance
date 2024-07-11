@@ -1,5 +1,6 @@
 """ The Discord bot version of Seance. """
 
+import datetime
 import os
 import re
 import sys
@@ -7,9 +8,9 @@ from io import StringIO
 from typing import Union, Optional
 
 import discord
-from discord import Message, Member, PartialEmoji, Status, ChannelType
+from discord import Message, User, Member, Status, ChannelType, Emoji
+from discord.abc import Messageable
 from discord.raw_models import RawReactionActionEvent
-from discord import Emoji
 from discord.activity import Activity
 from discord.enums import ActivityType
 from discord.errors import HTTPException
@@ -53,7 +54,7 @@ class SeanceClient(discord.Client):
 
     def __init__(self, ref_user_id, pattern, command_prefix, *args, dm_guild_id=None, dm_manager_options=None,
         sdnotify=False, default_status=False, default_presence=False, forward_pings=None, proxied_emoji=set(),
-        valid_reproxy_targets=set(), **kwargs
+        valid_reproxy_targets=set(), send_typing=False, **kwargs
     ):
 
         self.ref_user_id = ref_user_id
@@ -72,6 +73,7 @@ class SeanceClient(discord.Client):
         self.forward_pings = forward_pings
         self.proxied_emoji = proxied_emoji
         self.valid_reproxy_targets = valid_reproxy_targets
+        self.send_typing = send_typing
 
         # We always support reproxying our reference user.
         self.valid_reproxy_targets.add(self.ref_user_id)
@@ -850,6 +852,21 @@ class SeanceClient(discord.Client):
         except HTTPException:
             print('An error occurred while trying to reproxy a force proxied emoji', file=sys.stdout)
 
+    async def on_typing(self, channel: Messageable, user: User | Member, _when: datetime.datetime):
+        """Send typing state info whenever our reference user types."""
+
+        # Must be enabled intentionally.
+        if not self.send_typing:
+            return
+
+        # Must be the reference user
+        if not self.ref_user_id == user.id:
+            return
+
+        # There is no "typing stop" functionality in Discord's API, not even for non-bot users, so we just pulse
+        # a single new channel typing event each time we're hit with a new one, hoping it wasn't delayed too badly
+        await channel.typing()
+
 
 def _split_option(s: str) -> set[str]:
     """Split a list of whitespace or comma separated values provided in an option."""
@@ -902,6 +919,9 @@ def main():
         ),
         ConfigOption(name='valid reproxy targets', required=False, default='',
             help="Comma or whitespace separated list of user IDs. Only messages authored by an entry in this list will be allowed as targets of !reproxy."
+        ),
+        ConfigOption(name='send typing', required=False, default=False, type=bool,
+            help="If set, this indicates that Sèance will send typing events when the reference user is typing."
         ),
     ]
 
@@ -962,6 +982,7 @@ def main():
         intents=intents,
         proxied_emoji=_split_option(options.proxied_emoji),
         valid_reproxy_targets={int(i) for i in _split_option(options.valid_reproxy_targets)},
+        send_typing=options.send_typing,
     )
     print("Starting Séance Discord bot.")
     client.run(options.token)
