@@ -1,24 +1,20 @@
 """ The Discord bot version of Seance. """
 
+import datetime
 import os
 import re
 import sys
-import json
-import asyncio
-import argparse
 from io import StringIO
 from typing import Union, Optional
 
 import discord
-from discord import Message, Member, Status, ChannelType
-from discord import Emoji
-from discord.activity import Activity, ActivityType
+from discord import Message, User, Member, Status, ChannelType, Emoji
+from discord.abc import Messageable
+from discord.raw_models import RawReactionActionEvent
+from discord.activity import Activity
+from discord.enums import ActivityType
 from discord.errors import HTTPException
 from discord.message import PartialMessage
-
-# import discord_slash
-# from discord_slash.utils.manage_commands import create_option
-# from discord_slash.model import SlashCommandOptionType
 
 import PythonSed
 from PythonSed import Sed
@@ -57,7 +53,8 @@ def running_in_systemd() -> bool:
 class SeanceClient(discord.Client):
 
     def __init__(self, ref_user_id, pattern, command_prefix, *args, dm_guild_id=None, dm_manager_options=None,
-        sdnotify=False, default_status=False, default_presence=False, forward_pings=None, **kwargs
+        sdnotify=False, default_status=False, default_presence=False, forward_pings=None, proxied_emoji=set(),
+        valid_reproxy_targets=set(), send_typing=False, **kwargs
     ):
 
         self.ref_user_id = ref_user_id
@@ -74,6 +71,12 @@ class SeanceClient(discord.Client):
         self.default_status = default_status
         self.default_presence = default_presence
         self.forward_pings = forward_pings
+        self.proxied_emoji = proxied_emoji
+        self.valid_reproxy_targets = valid_reproxy_targets
+        self.send_typing = send_typing
+
+        # We always support reproxying our reference user.
+        self.valid_reproxy_targets.add(self.ref_user_id)
 
         super().__init__(*args, enable_debug_events=True, **kwargs)
 
@@ -95,6 +98,7 @@ class SeanceClient(discord.Client):
             '!status': self.handle_status_command,
             '!presence': self.handle_presence_command,
             '!nick': self.handle_nickname_command,
+            '!reproxy': self.handle_reproxy_command,
         }
 
         self.shortcut_handlers = {
@@ -179,7 +183,7 @@ class SeanceClient(discord.Client):
         return target
 
 
-    async def _get_target_message_and_args(self, message: Message, command_terminator=' '):
+    async def _get_target_message_and_args(self, message: Message, command_terminator=' ', use_history=True):
         """ Parse out a target message and remaining arguments from a message.
 
         This is useful for commands like !edit that take a message somehow, but messages can be passed in 3 forms:
@@ -189,6 +193,7 @@ class SeanceClient(discord.Client):
                 arguments are everything after "word 1".
             3. A link, in which case the channel and message ID are both parsed from that command word, and the
                 rest of the arguments are everything after "word 1" again.
+            4. If all else fails we will search the last five messages for the most recent proxied message. This is controlled by the `use_history` parameter and defaults to `True`.
 
             This method is a disaster.
         """
@@ -236,11 +241,16 @@ class SeanceClient(discord.Client):
 
                 except (AttributeError, IndexError, HTTPException) as e:
 
+                    if not use_history:
+                        return None, None
+
                     # Okay. No link. No ID. No reply. Just find the last proxied message within 5 messages.
                     prev_messages = message.channel.history(limit=5)
                     async for msg in prev_messages:
                         if msg.author.id == self.user.id:
                             return msg, message.content[(message.content.find(command_terminator) + 1):]
+        # If nothing worked, return None, None.
+        return None, None
 
 
     async def _handle_content(self, message: Message, content: str):
@@ -322,7 +332,10 @@ class SeanceClient(discord.Client):
         mention_flag = True
         if ref is not None:
             ref.fail_if_not_exists = False
-            if message.reference.resolved.author.id not in map(lambda x: x.id, message.mentions):
+            # Sometimes the API might not actually pass the resolved message, we refetch it anyway.
+            if ref.resolved is None:
+                ref.resolved = await message.channel.fetch_message(message.reference.message_id)
+            if ref.resolved.author.id not in map(lambda x: x.id, message.mentions):
                 mention_flag = False
 
         # Send the new message.
@@ -374,7 +387,7 @@ class SeanceClient(discord.Client):
         try:
             await target.edit(content=new_content)
         except HTTPException as e:
-            print(f"Failed to edit message: {e}.\nNot deleting original message.")
+            print(f"Failed to edit message: {e}.\nNot deleting command message.")
             return
 
         # Delete the message that executed the command.
@@ -398,13 +411,13 @@ class SeanceClient(discord.Client):
         try:
             await target.edit(content=new_content)
         except HTTPException as e:
-            print(f"Failed to edit message: {e}\nNot deleting original message.", file=sys.stderr)
+            print(f"Failed to edit message: {e}\nNot deleting command message.", file=sys.stderr)
             return
 
         try:
             await message.delete()
         except HTTPException as e:
-            print(f"Failed to delete original message: {e}.", file=sys.stderr)
+            print(f"Failed to delete command message: {e}.", file=sys.stderr)
 
 
     async def handle_delete_command(self, message: Message):
@@ -421,13 +434,13 @@ class SeanceClient(discord.Client):
         try:
             await target.delete()
         except HTTPException as e:
-            print(f"Failed to delete message: {e}\nNot deleting original message.", file=sys.stderr)
+            print(f"Failed to delete targeted message: {e}\nNot deleting command message.", file=sys.stderr)
             return
 
         try:
             await message.delete()
         except HTTPException as e:
-            print(f"Failed to delete original message: {e}.", file=sys.stderr)
+            print(f"Failed to delete command message: {e}.", file=sys.stderr)
 
 
     async def handle_presence_command(self, message: Message):
@@ -541,6 +554,63 @@ class SeanceClient(discord.Client):
             await message.delete()
         except HTTPException as e:
             print(f"Failed to delete messsage: {e}.", file=sys.stderr)
+
+    async def handle_reproxy_command(self, message: Message):
+        """ <prefix>!reproxy -- reproxies a specified message. """
+
+        # We don't care about any arguments, but a reproxy *must* be prefixed
+        # if we've at all defined a prefix, this is a heuristic of sorts to
+        # indicate that there are other Séance instances to worry about.
+        if not message.content.startswith(self.command_prefix):
+            # An empty prefix (`''`) will match against anything so this will still allow
+            # unprefixed reproxying when a prefix isn't set.
+            print("Reproxy requested but command was unprefixed which is disallowed for safety.", file=sys.stderr)
+            return
+
+        # We require a targeted message to know what to reproxy.
+        # We have to manually handle history based targeting because we need custom logic to skip the
+        # command message and still include the reference user's previous messages.
+        target, _ = await self._get_target_message_and_args(message, use_history = False)
+
+        # Custom history based targeting logic.
+        if target is None:
+            # Try to look in the last 6 messages, skipping our command message.
+            prev_messages = message.channel.history(limit=6)
+            async for msg in prev_messages:
+                if msg.id == message.id:
+                    # Skip our command message.
+                    continue
+                if msg.author.id in self.valid_reproxy_targets:
+                    target = msg
+                    break
+
+        if target is None:
+            print("Reproxy requested but no valid proxied message found within 5 messages!", file=sys.stderr)
+            return
+
+        # We must check that the returned result was *actually* a message by an author we're allowed to reproxy.
+        if target.author.id not in self.valid_reproxy_targets:
+            print("Reproxy requested but specified message was not authored by a reproxy allowed user!",
+                  file = sys.stderr)
+            return
+
+        # Now we get down to actually reproxying
+        try:
+            await self.proxy(target, target.content)
+        except HTTPException as e:
+            print(f"Failed to proxy message during reproxy: {e}\nNot deleting original message.", file=sys.stderr)
+            return
+
+        try:
+            await target.delete()
+        except HTTPException as e:
+            print(f"Failed to delete target message: {e}\nNot deleting command message.", file=sys.stderr)
+            return
+
+        try:
+            await message.delete()
+        except HTTPException as e:
+            print(f"Failed to delete command message: {e}.", file=sys.stderr)
 
 
     async def handle_simple_reaction(self, message: Message, content: str):
@@ -744,6 +814,76 @@ class SeanceClient(discord.Client):
         self._cached_status = status
 
 
+    # Needs to be raw because message might not be in the message cache.
+    async def on_raw_reaction_add(self, payload: RawReactionActionEvent):
+
+        # Restrict to only reactions added by our reference user.
+        if payload.user_id != self.ref_user_id:
+            return
+
+        # Keep track of if this emoji matched our list of force proxied emoji.
+        # `*` is usable as a global "proxy any reactions by the reference user".
+        proxied = '*' in self.proxied_emoji
+
+        # We have to handle default Unicode emoji slightly differently than Discord emoji.
+        if payload.emoji.id is None:
+            # This is a Unicode emoji and the actual value is stored in name.
+            if payload.emoji.id in self.proxied_emoji:
+                proxied=True
+        else:
+            # This is a custom Discord emoji
+            if str(payload.emoji.id) in self.proxied_emoji:
+                proxied=True
+
+        # Don't do anything further if this reaction shouldn't be force proxied.
+        if not proxied:
+            return
+
+        # Try to add the given emoji and clear the other, if the add fails this will prevent clearing the existing
+        # reaction so you still get the reaction.
+        # NOTE: Due to a quirk of how Discord/discord.py works, if another user has already added a given emoji
+        # and that emoji is *still* on the given message when we add the reaction, we don't have to actually
+        # have that emoji ourselves, this means that force proxied emoji *always* work.
+        channel = self.get_channel(payload.channel_id)
+        message = channel.get_partial_message(payload.message_id)
+        try:
+            await message.add_reaction(payload.emoji)
+            await message.remove_reaction(payload.emoji, member=payload.member)
+        except HTTPException:
+            print('An error occurred while trying to reproxy a force proxied emoji', file=sys.stdout)
+
+    async def on_typing(self, channel: Messageable, user: User | Member, _when: datetime.datetime):
+        """Send typing state info whenever our reference user types."""
+
+        # Must be enabled intentionally.
+        if not self.send_typing:
+            return
+
+        # Must be the reference user
+        if not self.ref_user_id == user.id:
+            return
+
+        # There is no "typing stop" functionality in Discord's API, not even for non-bot users, so we just pulse
+        # a single new channel typing event each time we're hit with a new one, hoping it wasn't delayed too badly
+        await channel.typing()
+
+
+def _split_option(s: str) -> set[str]:
+    """Split a list of whitespace or comma separated values provided in an option."""
+
+    values = set()
+
+    # Split by non-alphanum and commas.
+    for item in re.split(r'\s+|,', s):
+        if not len(item):
+            # Skip blank entries.
+            continue
+
+        # Append to our set of items.
+        values.add(item)
+
+    return values
+
 def main():
 
     options = [
@@ -773,6 +913,15 @@ def main():
         ),
         ConfigOption(name='Forward pings', required=False, default=False, type=bool,
             help="Whether to message the proxied user upon the bot getting pinged",
+        ),
+        ConfigOption(name='proxied emoji', required=False, default='',
+            help="Comma or whitespace separated list of emoji or emoji IDs to always proxy when used as a reaction by the reference user."
+        ),
+        ConfigOption(name='valid reproxy targets', required=False, default='',
+            help="Comma or whitespace separated list of user IDs. Only messages authored by an entry in this list will be allowed as targets of !reproxy."
+        ),
+        ConfigOption(name='send typing', required=False, default=False, type=bool,
+            help="If set, this indicates that Sèance will send typing events when the reference user is typing."
         ),
     ]
 
@@ -831,6 +980,9 @@ def main():
         default_presence = options.default_presence,
         forward_pings=options.forward_pings,
         intents=intents,
+        proxied_emoji=_split_option(options.proxied_emoji),
+        valid_reproxy_targets={int(i) for i in _split_option(options.valid_reproxy_targets)},
+        send_typing=options.send_typing,
     )
     print("Starting Séance Discord bot.")
     client.run(options.token)
