@@ -7,21 +7,28 @@
     buildPythonPackage
     setuptools
     wheel
+    hatchling
   ;
 in buildPythonPackage {
-  pname = "sed";
-  version = "1.0";
+  pname = "pythonsed";
+  version = "v2.1post0";
 
   src = fetchFromGitHub {
-    owner = "GillesArcas";
+    owner = "fschaeck";
     repo = "PythonSed";
-    rev = "342534107e8168fe2889dcd2c9c8126546233c2f";
-    hash = "sha256-RdjR+sWjymmB7xCxiPe1xs3x7NXUyXlFM8hVllOwqFE=";
+    rev = "d091c35b202959d4c899254b3f34b48ea4c283be";
+    hash = "sha256-s3Oq7ox6ol/CEJmKhZgyECapRPA0Se5vBxd0bPlCPDk=";
   };
+
+  format = "pyproject";
 
   nativeBuildInputs = [
     setuptools
     wheel
+  ];
+
+  buildInputs = [
+    hatchling
   ];
 
   meta = {
