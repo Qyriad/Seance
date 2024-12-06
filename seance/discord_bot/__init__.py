@@ -350,22 +350,24 @@ class SeanceClient(discord.Client):
             print("Substitution requested but no proxied message was found within 5 messages!")
             return
 
-        sed = Sed()
-
         # Basic regular expressions suck.
-        sed.regexp_extended = True
+        sed = Sed(regexp_extended = True)
 
         # Don't include the command prefix.
         start = message.content.find('!') + 1
         try:
             sed.load_string(message.content[start:])
+            # Try to compile the script to see if it's well formed.
+            sed.script.compile()
         except PythonSed.sed.SedException:
             # If it failed, try again adding a trailing slash.
+            sed = Sed(regexp_extended = True)
             sed.load_string(f"{message.content[start:]}/")
+            # Have to try to compile it here otherwise we could try to edit without actually seeing a failure.
+            sed.script.compile()
 
         # PythonSed accepts a file-like object, not a string, so we have to wrap the it in a StringIO object.
         new_content = sed.apply(StringIO(target.content), output=None)
-
 
         # Sed returns a list of lines, but we need a single string, so...
         new_content = '\n'.join(new_content)
