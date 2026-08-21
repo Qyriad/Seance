@@ -11,6 +11,7 @@
 
       package = pkgs.callPackage ./package.nix {
         python-sed = pkgs.callPackage ./nix/python-sed.nix { };
+        python-fluxer = pkgs.callPackage ./nix/python-fluxer.nix { };
       };
 
     in {

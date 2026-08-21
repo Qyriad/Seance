@@ -2,6 +2,7 @@
   lib,
   python3,
   python-sed,
+  python-fluxer,
 }: let
   inherit (python3.pkgs)
     buildPythonPackage
@@ -31,5 +32,6 @@ in buildPythonPackage {
     emoji
     python-telegram-bot
     sdnotify
+    python-fluxer
   ];
 }
