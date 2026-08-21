@@ -65,14 +65,23 @@ class SeanceClient(fluxer.Client):
 
 
     async def _proxy(self, message: Message, new_content: str):
-        channel = message.channel
         # message.channel is only resolved if it's already been cached.
-        if not channel:
-            channel = await self.fetch_channel(str(message.channel_id))
+        channel = message.channel if message.channel else await self.fetch_channel(str(message.channel_id))
 
         attachment_files = [await self._get_from_cdn(att) for att in message.attachments]
 
-        await channel.send(new_content, files=attachment_files)
+        ref = None
+        if reply_target := message.referenced_message:
+            ref = dict(
+                channel_id = reply_target.channel_id,
+                message_id = reply_target.id,
+            )
+
+        await channel.send(
+            new_content,
+            files=attachment_files,
+            message_reference=ref,
+        )
 
     async def _handle_content(self, message: Message, content: str):
         if content:
