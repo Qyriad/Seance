@@ -43,6 +43,8 @@ class SeanceClient(fluxer.Client):
 
         self.command_handlers = {
             '!s/': self.handle_substitute_command,
+            '!edit': self.handle_edit_command,
+            '!delete': self.handle_delete_command,
         }
 
         @self.event
@@ -198,6 +200,20 @@ class SeanceClient(fluxer.Client):
             await message.delete()
         except HTTPException as e:
             print(f"Failed to delete original message: {e}.", file=sys.stderr)
+
+    async def handle_delete_command(self, message: Message):
+        """ !delete -- delete a message """
+        target = await self._get_edit_target(message)
+        try:
+            await target.delete()
+        except Exception as e:
+            print(f"Failed to delete message: {e}\nNot deleting command message.", file=sys.stderr)
+            return
+
+        try:
+            await message.delete()
+        except Exception as e:
+            print(f"Failed to delete command message: {e}", file=sys.stderr)
 
     async def _handle_content(self, message: Message, content: str):
         if content:
