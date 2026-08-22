@@ -27,6 +27,7 @@ class SeanceClient(fluxer.Client):
         command_prefix: str,
         intents=None,
         *args,
+        sdnotify=False,
         **kwargs,
     ):
         if not isinstance(pattern, re.Pattern):
@@ -38,6 +39,7 @@ class SeanceClient(fluxer.Client):
 
         self.ref_user_id = ref_user_id
         self.command_prefix = command_prefix
+        self.sdnotify = sdnotify
 
         self.command_handlers = {
             '!s/': self.handle_substitute_command,
@@ -50,6 +52,9 @@ class SeanceClient(fluxer.Client):
         @self.event
         async def on_ready():
             print("Séance Fluxer startup complete")
+            if self.sdnotify:
+                notifier = sdnotify.SystemdNotifier(debug=True)
+                notifier.notify('READY=1')
 
         @self.event
         async def on_message_edit(message: Message):
@@ -249,6 +254,19 @@ def main():
         ),
     ]
 
+    sdnotify_available = 'sdnotify' in sys.modules
+    help_addendum = ' (Requires `sdnotify` Python package, not found)' if not sdnotify_available else ''
+    options.append(ConfigOption(name='systemd notify', required=False, default=None, type=bool,
+        help=f'Notify systemd when startup is complete.{help_addendum}',
+    ))
+
+    help_epilog = ("All options can also be specified in an INI config (path passed with `--config`) "
+        "as `key = value` under a section called `[Fluxer]`, where the key name is the option name "
+        "without the leading -- (words can be separated by dashes, underscores, or spaces).\n"
+        "Options can also be specified as environment variables, where the name of the variable is "
+        "`SEANCE_FLUXER_` followed by the name of the option in SCREAMING_SNAKE_CASE."
+    )
+
     config_handler = ConfigHandler(
         options,
         env_var_prefix='SEANCE_FLUXER_',
@@ -265,7 +283,18 @@ def main():
         print(f'Invalid regular expression given for {pattern=}', file=sys.stderr)
         raise
 
-    client = SeanceClient(options.ref_user_id, pattern, options.prefix)
+    if 'content' not in pattern.groupindex:
+        options.argparser.error('regex pattern must have a named capture group called `content` (see https://docs.python.org/3/library/re.html#index-13')
+
+    if options.systemd_notify and not sdnotify_available:
+        options.argparser.error('--systemd-notify specified but `sdnotify` Python package not available. Try `pip3 install sdnotify`?')
+
+    intents = Intents.default() \
+        | Intents.MESSAGE_CONTENT \
+        | Intents.GUILD_MEMBERS \
+        | Intents.GUILD_PRESENCES
+
+    client = SeanceClient(options.ref_user_id, pattern, options.prefix, intents=intents)
     client.run(options.token)
 
 if __name__ == '__main__':
