@@ -16,6 +16,23 @@ $ seance-discord --token ODDFOFXUpgf7yEntul5ockCA.OFk6Ph.lmsA54bT0Fux1IpsYvey5Xu
 
 Note that the Discord bot also requires the Presence and Server Members Privileged Gateway Intents, which can be enabled in the "Bot" settings of the Discord application page.
 
+### Options
+
+These are the available configuration options, configured as described [below](#config-file).
+
+#### Discord
+- `token` - The Discord bot token used to authenticate, **important**: this must be kept secret as it allows anyone to control your bot account.
+- `ref-user-id` - The reference user's Discord ID. This is the user account allowed to proxy messages and execute Séance commands.
+- `pattern` - The regular expression pattern used to match a message to be proxied. Must contain a group named `content` which should contain the message body that will be in the proxied message.
+- `prefix` - A prefix that can be used before a `!` command (such as `!edit`) to uniquely indicate that this instance of Séance should handle the command. Unprefixed commands are always accepted, even when this is set.
+- `proxied-emoji` - A whitespace or comma separated list of unicode emoji (`🤝`) and Discord custom emoji ID numbers that will *always* be reproxied by Séance when used as a reaction by the reference user. The reference user will *not* be able to react with this emoji themselves, it will always be removed.
+
+- **TODO: DM Mode configuration**
+
+
+#### Telegram
+**TODO**
+
 ### Config File
 
 Anything that can be passed as a command-line option can also be specified an INI config file. Options for the Discord bot are placed under a `[Discord]` section, with the name of the INI key being the same as the command-line option without the leading `--`. Words can be separated by dashes, underscores, or spaces. For example, `--ref-user-id 188344527881400991` can be any of the following:
@@ -80,6 +97,7 @@ Pros of Séance over PluralKit on Discord:
 - No webhooks; real Discord account
   - Role colors in name
   - Real replies
+- Easily proxy emoji reactions
 
 Cons of Séance over PluralKit on Discord:
 - Requires self-hosting
